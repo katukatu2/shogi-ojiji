@@ -113,10 +113,8 @@ public/sfx/ 雷蔵の音声（raizo_*.wav、VOICEVOX:麒ヶ島宗麟）
 ## スマホアプリ化（Capacitor）
 
 ```bash
-npm i -D @capacitor/cli @capacitor/core
-npx cap add android      # Android Studio で開いて実機確認
-npx cap add ios          # macOS + Xcode が必要
-npm run cap:android      # build → sync → Android Studio を開く
+npm run cap:android      # build → sync → Android Studio を開く（android/ は生成済み）
+npx cap add ios          # macOS + Xcode が必要。iOS はまだ未生成
 ```
 
 `capacitor.config.ts` を同梱している（webDir は dist、配信は https スキーム）。Android WebView では Service Worker 経由の COOP/COEP でエンジンが動く想定。iOS（WKWebView）は SharedArrayBuffer の扱いが未検証で、動かない場合は簡易判定で進む。

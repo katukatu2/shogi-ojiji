@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">将棋オジジの定石指南</string>
+    <string name="title_activity_main">将棋オジジの定石指南</string>
+    <string name="package_name">jp.sonot.shogiojiji</string>
+    <string name="custom_url_scheme">jp.sonot.shogiojiji</string>
+</resources>
