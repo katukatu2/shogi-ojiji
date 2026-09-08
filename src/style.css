@@ -761,6 +761,78 @@ button {
   margin-bottom: 4px;
 }
 
+/* 対局開始の演出: 画面中央の帯。触れない（下の盤はすぐ操作できる） */
+.start-banner {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 45;
+  animation: startFade 1.7s ease-in forwards;
+}
+
+.start-banner .band {
+  width: 100%;
+  padding: 18px 0 16px;
+  background: linear-gradient(90deg, rgba(43, 58, 85, 0) 0%, rgba(43, 58, 85, 0.96) 12%, rgba(43, 58, 85, 0.96) 88%, rgba(43, 58, 85, 0) 100%);
+  color: #fff;
+  text-align: center;
+  border-top: 2px solid rgba(255, 214, 120, 0.9);
+  border-bottom: 2px solid rgba(255, 214, 120, 0.9);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  transform-origin: left center;
+  animation: startBand 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.start-banner .word {
+  font-size: clamp(36px, 12vw, 56px);
+  font-weight: 900;
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
+  letter-spacing: 0.28em;
+  margin-left: 0.28em; /* 字間ぶんの右寄りを戻す */
+  line-height: 1.2;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), 0 0 18px rgba(255, 214, 120, 0.45);
+  animation: startWord 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 0.15s both;
+}
+
+.start-banner .sub {
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  opacity: 0.9;
+  margin-top: 4px;
+  animation: startSub 0.4s ease-out 0.35s both;
+}
+
+@keyframes startBand {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes startWord {
+  from { opacity: 0; transform: scale(1.6); filter: blur(4px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
+@keyframes startSub {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 0.9; transform: translateY(0); }
+}
+
+@keyframes startFade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-banner .band,
+  .start-banner .word,
+  .start-banner .sub {
+    animation: none;
+  }
+}
+
 /* 詰みの表示: 盤面は残し、盤の下に出す */
 .mate-banner {
   margin-top: 10px;

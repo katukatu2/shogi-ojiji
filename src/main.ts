@@ -401,7 +401,23 @@ function startGame(style: Style): void {
   hintMove = null;
   buildGameScreen();
   render();
+  showStartBanner(style);
   game.judge.prefetch(game.pos);
+}
+
+// 対局開始の演出。帯が横に広がり「対局開始」が浮かんで、1.6 秒で消える。操作は妨げない
+let startBannerTimer = 0;
+function showStartBanner(style: Style): void {
+  document.querySelector('.start-banner')?.remove();
+  window.clearTimeout(startBannerTimer);
+  const banner = el('div', 'start-banner');
+  const band = el('div', 'band');
+  band.append(el('div', 'word', '対局開始'));
+  band.append(el('div', 'sub', `対 ${style.name}・${levelById(progress.level).name}`));
+  banner.append(band);
+  app.append(banner);
+  playPiece();
+  startBannerTimer = window.setTimeout(() => banner.remove(), 1700);
 }
 
 let boardEl: HTMLElement;
