@@ -638,7 +638,7 @@ button {
   background: var(--navy);
   color: #fff;
   text-align: center;
-  animation: nodIn 0.35s ease-out;
+  animation: bubbleIn 0.35s ease-out;
 }
 
 .mate-banner .mate-word {
@@ -874,7 +874,7 @@ raizo-rig {
   font-size: 13px;
   line-height: 1.45;
   margin-bottom: 14px;
-  animation: nodIn 0.3s ease-out;
+  animation: bubbleIn 0.25s ease-out;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -1090,4 +1090,10 @@ raizo-rig {
 .engine-notice p {
   margin: 0 0 8px;
   line-height: 1.5;
+}
+
+/* 吹き出し・帯の登場。位置は動かさず、その場で浮かび上がる */
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
