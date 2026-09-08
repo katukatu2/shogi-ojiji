@@ -6,7 +6,7 @@ import { COMMON_REACTIONS } from './common';
 export const SHIKENBISHA: Style = {
   id: 'shikenbisha',
   name: '四間飛車',
-  description: 'オジジは角道を止めて飛車を４筋へ振り、美濃囲いに潜る。捌き合いになれば振り飛車の得意分野じゃ。',
+  description: '飛車を４筋へ振り、美濃囲いに潜る',
   plans: [
     {
       name: '美濃囲い型',

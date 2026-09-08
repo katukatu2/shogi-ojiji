@@ -45,7 +45,7 @@ const BOUGIN_GOOD: GoodPattern[] = [
 export const BOUGIN: Style = {
   id: 'bougin',
   name: '棒銀',
-  description: 'オジジは飛車先を伸ばし、銀を真っすぐ繰り出してくる。単純だが、受け間違えると一気に潰される。',
+  description: '銀をまっすぐ繰り出す速攻',
   plans: [
     {
       name: '本格型',

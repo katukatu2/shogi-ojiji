@@ -25,7 +25,7 @@ export class OjijiRig {
   private ready = false;
   private pending: RigState | null = null; // 素材の読み込み前に頼まれた状態
   private failed = false;
-  onFail: (() => void) | null = null;
+  onFail: ((parent: HTMLElement | null) => void) | null = null;
 
   constructor() {
     const supported = typeof window !== 'undefined' && !!window.customElements?.get('raizo-rig');
@@ -45,8 +45,9 @@ export class OjijiRig {
       this.failed = true;
       this.pending = null;
       this.after = null;
+      const parent = this.el?.parentElement ?? null;
       this.el?.remove();
-      if (this.onFail) this.onFail();
+      if (this.onFail) this.onFail(parent);
     });
     this.el.addEventListener('raizo-complete', (ev) => {
       const detail = (ev as CustomEvent<{ state: string }>).detail;

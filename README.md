@@ -102,6 +102,7 @@ assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。�
 ## オジジの絵（雷蔵パーツアニメーション）
 
 - `public/raizo/`: 顔だけの Canvas 2D Web Component `<raizo-rig>`（`raizo-rig.js`）と `faces/` の顔 8 点（非可逆 WebP、幅 288px、合計約 135KB）。制作元の全身リグ（17 点・2.4MB）はスマートフォンの対局画面に常駐させるには大きすぎたので、顔だけに作り直した。`assets.js` は顔の URL を渡す薄い一覧。
+- タイトル画面だけは全身を出す。体は `public/raizo/body.webp`（19KB の静止画。`python scripts/build-body.py` が制作元の体・袖・手を `assets-src/raizo/body/` から、元のリグと同じ位置・角度で合成する）で、その上に顔のリグを重ねる。位置の対応は `style.css` の `.title-screen .face.full raizo-rig`。
 - 顔素材は `assets-src/raizo/heads/`（制作元の頭部）から `python scripts/build-faces.py` で作る。8 点を同じ倍率で縮め、`brow` は眉だけ切り出して `sour` に重ねる。
 - 描画は動いている間だけ。単発動作の間と、ループ状態の中で動きのある区間（まばたき、首の傾げ、眉の上下）だけ `requestAnimationFrame` を回し、それ以外は 1 回描いて次の区間まで眠る。`prefers-reduced-motion` では表情だけ切り替える。
 - 読み込み順は `index.html` で `assets.js` → `raizo-rig.js`。素材が読めない環境では `src/ui/ojiji.ts` の SVG にフォールバックする。

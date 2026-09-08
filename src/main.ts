@@ -16,7 +16,7 @@ import { playThunder, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug } f
 
 const STYLES: { style: Style | null; name: string; desc: string }[] = ALL_STYLES.map((s) => ({
   style: s,
-  name: `オジジの${s.name}に挑む`,
+  name: s.name,
   desc: s.description,
 }));
 
@@ -55,9 +55,9 @@ let game: Game | null = null;
 // <raizo-rig> は 1 つだけ作り、タイトル・対局・カットイン・結果の間で移動して使う。
 // 素材が読めない環境では SVG の顔にフォールバックする。
 const rig = new OjijiRig();
-rig.onFail = () => {
+rig.onFail = (parent) => {
   // 顔素材が読めなかった。今の置き場に SVG の顔を出す
-  if (stageFaceEl) stageFaceEl.innerHTML = ojijiSvg('normal', { piece: false });
+  if (parent) parent.innerHTML = ojijiSvg('normal', { piece: parent.classList.contains('full') });
 };
 
 // 顔を容器に出す。rig があれば要素を移動、無ければ SVG
@@ -147,8 +147,17 @@ function showTitle(): void {
   game = null;
   app.innerHTML = '';
   const s = el('div', 'title-screen');
-  const face = el('div', 'face');
+  // タイトルだけは全身。体は静止画（public/raizo/body.webp）で、その上に顔のリグを重ねる
+  const face = el('div', 'face full');
   faceInto(face, 'normal');
+  if (rig.available) {
+    const body = new Image();
+    body.className = 'body';
+    body.alt = '';
+    body.decoding = 'async';
+    body.src = 'raizo/body.webp';
+    face.prepend(body);
+  }
   rig.settle('idle');
   s.append(face);
   s.append(el('h1', '', '将棋オジジの定石指南（仮）'));
@@ -173,14 +182,18 @@ function showTitle(): void {
   levelBox.append(el('div', 'level-desc', levelById(progress.level).description));
   s.append(levelBox);
 
+  // 戦法の一覧。1 行に名前・短い説明・成績。タップで対局開始
   const list = el('div', 'joseki-list');
+  list.append(el('div', 'list-title', 'オジジの戦法を選ぶ'));
   const done = doneTaskSet(progress);
   for (const j of STYLES) {
     const b = el('button', 'joseki-btn');
     const rec = j.style ? progress.styles[j.style.id] : undefined;
     const taskCount = j.style ? [...done].filter((k) => k.startsWith(j.style!.id + ':')).length : 0;
-    const recText = rec && rec.games > 0 ? `<em>${rec.games}局 ${rec.wins}勝 ／ 課題 ${taskCount}達成 ／ ばかもん ${rec.scolded}回</em>` : '';
-    b.innerHTML = `<b>${j.name}</b><span>${j.desc}</span>${recText}`;
+    const recText = rec && rec.games > 0
+      ? `<em>${rec.wins}勝 ${rec.games}局</em>${rec.scolded > 0 ? `<em>ばかもん ${rec.scolded}回</em>` : `<em>課題 ${taskCount}</em>`}`
+      : '<em>未対局</em>';
+    b.innerHTML = `<span class="jn"><b>${j.name}</b><span class="jd">${j.desc}</span></span><span class="jr">${recText}</span><span class="chev">›</span>`;
     b.disabled = !j.style;
     if (j.style) {
       const style = j.style;

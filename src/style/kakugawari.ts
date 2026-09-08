@@ -94,7 +94,7 @@ const REACT_EXCHANGE: Reaction = {
 export const KAKUGAWARI: Style = {
   id: 'kakugawari',
   name: '角換わり',
-  description: 'オジジは早々に角を交換してくる。互いに角を持った将棋は、一手の隙が命取り。今いちばん流行りの戦法じゃ。',
+  description: '序盤で角を交換。一手の隙が命取り',
   plans: [
     {
       name: '腰掛け銀型',

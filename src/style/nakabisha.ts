@@ -41,7 +41,7 @@ const NAKABISHA_GOOD: GoodPattern[] = [
 export const NAKABISHA: Style = {
   id: 'nakabisha',
   name: '中飛車',
-  description: 'オジジは角道を開けたまま飛車を５筋へ回し、５五歩と伸ばして中央を制する。ゴキゲン中飛車じゃ。',
+  description: '飛車を５筋へ回し、中央を制する',
   plans: [
     {
       name: 'ゴキゲン標準型',

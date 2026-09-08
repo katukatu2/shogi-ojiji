@@ -8,7 +8,7 @@ import { COMMON_REACTIONS } from './common';
 export const YAGURA: Style = {
   id: 'yagura',
   name: '矢倉',
-  description: 'オジジは毎回、金銀三枚でがっちり玉を囲う矢倉で来る。堅い。攻め急ぐと痛い目を見る。',
+  description: '金銀三枚の堅い囲い。攻め急ぎは禁物',
   plans: [
     {
       name: '標準型',
