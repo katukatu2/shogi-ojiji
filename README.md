@@ -38,8 +38,9 @@ src/
   main.ts   画面（タイトル / 対局 / カットイン / 結果）
 public/engine/  やねうら王 WebAssembly 版（npm run engine:copy で node_modules から複製）
 public/coi-serviceworker.js  COOP/COEP ヘッダーを付けられない環境向けの Service Worker
-public/raizo/  雷蔵のアニメーション部品と透過 PNG
-public/sfx/ 効果音（bakamon_thunder.wav。「ばかもーん！」の雷）
+public/raizo/  雷蔵の顔アニメーション（raizo-rig.js）と顔の WebP（faces/）
+public/sfx/ 効果音（bakamon_thunder.mp3。「ばかもーん！」の雷）
+assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。アプリには同梱せず、scripts/ で public/ 用に変換する
 ```
 
 ## 悪手判定の仕組み（5 段階）
@@ -100,13 +101,15 @@ public/sfx/ 効果音（bakamon_thunder.wav。「ばかもーん！」の雷）
 
 ## オジジの絵（雷蔵パーツアニメーション）
 
-- `public/raizo/`: 制作元から納品された `raizo-rig.js`（Canvas 2D の Web Component `<raizo-rig>`）と `sprites/` の透過 PNG 17 点。`assets.js` はこの PNG を URL で渡す薄い一覧（base64 内包版は使わない）。マゼンタ背景の制作元画像は同梱しない。
+- `public/raizo/`: 顔だけの Canvas 2D Web Component `<raizo-rig>`（`raizo-rig.js`）と `faces/` の顔 8 点（非可逆 WebP、幅 288px、合計約 135KB）。制作元の全身リグ（17 点・2.4MB）はスマートフォンの対局画面に常駐させるには大きすぎたので、顔だけに作り直した。`assets.js` は顔の URL を渡す薄い一覧。
+- 顔素材は `assets-src/raizo/heads/`（制作元の頭部）から `python scripts/build-faces.py` で作る。8 点を同じ倍率で縮め、`brow` は眉だけ切り出して `sour` に重ねる。
+- 描画は動いている間だけ。単発動作の間と、ループ状態の中で動きのある区間（まばたき、首の傾げ、眉の上下）だけ `requestAnimationFrame` を回し、それ以外は 1 回描いて次の区間まで眠る。`prefers-reduced-motion` では表情だけ切り替える。
 - 読み込み順は `index.html` で `assets.js` → `raizo-rig.js`。素材が読めない環境では `src/ui/ojiji.ts` の SVG にフォールバックする。
-- `src/ui/rig.ts` が状態管理。要素は 1 つだけ作り、タイトル・対局の舞台・カットイン・結果画面の間で移動して使う。`play()` はゲームの出来事のときだけ呼び、単発動作の終了は `raizo-complete` で受け、再生番号で古い終了処理を捨てる。画面が隠れたら `pause()`。
+- `src/ui/rig.ts` が状態管理。要素は 1 つだけ作り、タイトル・対局画面の相手の行（52px の顔）・カットイン・結果画面の間で移動して使う。素材が読めなければ `onFail` で SVG の顔に切り替える。`play()` はゲームの出来事のときだけ呼び、単発動作の終了は `raizo-complete` で受け、再生番号で古い終了処理を捨てる。画面が隠れたら `pause()`。
 - 状態の対応: idle（通常）／thinking（思考中・ヒント・待った・助言）／nod（良い手。台詞なし）／good（段階 2。湯飲みで一服）／doubtful（段階 3・王手）／bad（段階 4）／angry（段階 5）／surprised（プレイヤーの勝ち）。叱った後は解説中 thinking、閉じたら通常へ。
 - 対局画面では盤の上の「舞台」にオジジと吹き出しを置き、盤・持ち駒・ボタンとは重ならない。
 - 雷蔵の画像はロスレス WebP（元 PNG と同じ内容、合計 2.4MB）。
-- 音声はオジジの声を使わず、「ばかもーん！」（段階 5）の場面だけ雷の効果音 `public/sfx/bakamon_thunder.wav` を鳴らす（`src/ui/audio.ts`）。1 本の `<audio>` で鳴らし、前の音を止めてから鳴らす。ミュートや再生失敗でも進行は止まらない。最初のタップで `<audio>` を解錠する。ファイルを差し替えたら `SFX_VERSION` を変える。
+- 音声はオジジの声を使わず、「ばかもーん！」（段階 5）の場面だけ雷の効果音 `public/sfx/bakamon_thunder.mp3`（モノラル 96kbps、約 33KB）を鳴らす（`src/ui/audio.ts`）。元の WAV は `assets-src/sfx/` にあり、`node scripts/encode-sfx.mjs` で変換する（ffmpeg 不要、lamejs を使う）。1 本の `<audio>` で鳴らし、前の音を止めてから鳴らす。ミュートや再生失敗でも進行は止まらない。最初のタップで `<audio>` を解錠する。ファイルを差し替えたら `SFX_VERSION` を変える。
 
 ## スマホアプリ化（Capacitor）
 

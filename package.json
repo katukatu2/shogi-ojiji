@@ -13,13 +13,16 @@
     "cap:sync": "npm run build && npx cap sync",
     "cap:android": "npm run build && npx cap sync android && npx cap open android",
     "cap:ios": "npm run build && npx cap sync ios && npx cap open ios",
-    "selfplay": "vite-node scripts/selfplay.ts --"
+    "selfplay": "vite-node scripts/selfplay.ts --",
+    "assets:faces": "python scripts/build-faces.py",
+    "assets:sfx": "node scripts/encode-sfx.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
     "@types/node": "^26.4.1",
+    "lamejs": "^1.2.1",
     "typescript": "^5.9.3",
     "vite": "^7.1.0",
     "vitest": "^3.2.4"

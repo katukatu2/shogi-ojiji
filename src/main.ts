@@ -55,6 +55,10 @@ let game: Game | null = null;
 // <raizo-rig> は 1 つだけ作り、タイトル・対局・カットイン・結果の間で移動して使う。
 // 素材が読めない環境では SVG の顔にフォールバックする。
 const rig = new OjijiRig();
+rig.onFail = () => {
+  // 顔素材が読めなかった。今の置き場に SVG の顔を出す
+  if (stageFaceEl) stageFaceEl.innerHTML = ojijiSvg('normal', { piece: false });
+};
 
 // 顔を容器に出す。rig があれば要素を移動、無ければ SVG
 function faceInto(container: HTMLElement, expr: Expression): void {
@@ -273,7 +277,7 @@ function buildGameScreen(): void {
   const g = el('div', 'game');
 
   const top = el('div', 'topbar');
-  top.append(el('div', 'title', `対 ${game!.style.name}（${game!.level.name}）`));
+  top.append(el('div', 'title', `対 ${game!.style.name}・${game!.level.name}`));
   const status = el('div', 'status');
   moveNoEl = el('span', '', '1手目');
   scoldEl = el('span', 'scold', '叱られ 0回');
@@ -288,27 +292,28 @@ function buildGameScreen(): void {
   g.append(top);
   updateEngineLabel();
 
+  // 最終手と課題を 1 行に。課題は長ければ省略し、タップで全文を開く
+  const info = el('div', 'infoline');
   lastMoveEl = el('div', 'lastmove', '');
-  g.append(lastMoveEl);
-  const taskLine = el('div', 'taskline');
-  taskLine.textContent = `課題: ${game!.task.text}`;
-  g.append(taskLine);
+  const taskChip = el('button', 'task-chip', `課題: ${game!.task.text}`);
+  taskChip.title = game!.task.text;
+  taskChip.addEventListener('click', () => taskChip.classList.toggle('open'));
+  info.append(lastMoveEl, taskChip);
+  g.append(info);
 
-  // オジジと吹き出し。盤や操作ボタンとは重ならない固定の段
-  const stage = el('div', 'stage');
-  const stageFace = el('div', 'stage-face');
-  stageFaceEl = stageFace;
-  faceInto(stageFace, 'normal');
+  // 相手（オジジ）の行: 顔・持ち駒・吹き出し。吹き出しは行の上に重ねて出し、場所を取らない
+  const goteRow = el('div', 'hand gote');
+  const avatar = el('div', 'avatar');
+  stageFaceEl = avatar;
+  faceInto(avatar, 'normal');
   rig.settle('idle');
   nodEl = el('div', 'bubble');
   nodEl.hidden = true;
   turnId = 0;
   lineTurn = -1;
-  stage.append(stageFace, nodEl);
-  g.append(stage);
-
-  const goteHand = el('div', 'hand gote');
-  g.append(goteHand);
+  const goteHand = el('div', 'hp-list');
+  goteRow.append(avatar, goteHand, nodEl);
+  g.append(goteRow);
 
   const wrap = el('div', 'board-wrap');
   const files = el('div', 'files');
@@ -332,8 +337,10 @@ function buildGameScreen(): void {
   wrap.append(row);
   g.append(wrap);
 
-  const senteHand = el('div', 'hand sente');
-  g.append(senteHand);
+  const senteRow = el('div', 'hand sente');
+  const senteHand = el('div', 'hp-list');
+  senteRow.append(senteHand);
+  g.append(senteRow);
   handEls = [senteHand, goteHand];
 
   const controls = el('div', 'controls');
@@ -404,7 +411,7 @@ function render(): void {
   for (const color of [0, 1] as Color[]) {
     const h = handEls[color];
     h.innerHTML = '';
-    h.append(el('span', 'label', color === 0 ? 'あなたの持ち駒' : 'オジジの持ち駒'));
+    h.append(el('span', 'label', color === 0 ? 'あなたの持ち駒' : '持ち駒'));
     for (const hp of HAND_ORDER) {
       const n = pos.hands[color][hp];
       if (n <= 0) continue;

@@ -1,11 +1,11 @@
-// 効果音。オジジの声は使わない。「ばかもーん！」の場面だけ、雷の効果音（public/sfx/bakamon_thunder.wav）を鳴らす。
+// 効果音。オジジの声は使わない。「ばかもーん！」の場面だけ、雷の効果音（public/sfx/bakamon_thunder.mp3。元の WAV は assets-src/sfx にあり、scripts/encode-sfx.mjs で変換する）を鳴らす。
 // - 1 本の <audio> 要素で鳴らし、鳴らす前に前の音を止める（重なりなし）
 // - ミュート・再生失敗・自動再生制限のときは何もしない。ゲームの進行は音に依存しない
 // - スマートフォンの自動再生制限に備え、最初のタップで一度だけ要素を鳴らして解錠する
 
 // ファイルを差し替えたときはここを変えると、古いキャッシュを使わなくなる
-const SFX_VERSION = '2026-09-08a';
-const THUNDER = 'sfx/bakamon_thunder.wav';
+const SFX_VERSION = '2026-09-09a';
+const THUNDER = 'sfx/bakamon_thunder.mp3';
 const THUNDER_VOLUME = 0.1; // 雷は大きすぎるので 10% の音量で鳴らす
 
 let muted = false;

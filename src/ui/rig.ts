@@ -1,5 +1,6 @@
-// 雷蔵（オジジ）のパーツアニメーション <raizo-rig> の薄いラッパー。
+// 雷蔵（オジジ）の顔アニメーション <raizo-rig> の薄いラッパー。
 // - 要素は 1 つだけ作り、タイトル・対局・カットイン・結果の間で移動して使う（二重再生と再読み込みを避ける）
+// - 素材が読めなかったら（raizo-error）onFail を呼び、以後 available を false にする。呼び出し側は SVG の顔に切り替える
 // - play() はゲームの出来事が起きたときだけ呼ぶ。描画更新のたびには呼ばない
 // - 単発動作（nod / good / bad / angry / surprised）の終了は raizo-complete で受け、
 //   古い動作の終了処理が新しい動作を上書きしないよう、再生ごとの番号で見分ける
@@ -23,6 +24,8 @@ export class OjijiRig {
   private current: RigState = 'idle';
   private ready = false;
   private pending: RigState | null = null; // 素材の読み込み前に頼まれた状態
+  private failed = false;
+  onFail: (() => void) | null = null;
 
   constructor() {
     const supported = typeof window !== 'undefined' && !!window.customElements?.get('raizo-rig');
@@ -36,6 +39,14 @@ export class OjijiRig {
         this.pending = null;
         this.play(s);
       }
+    });
+    this.el.addEventListener('raizo-error', (ev) => {
+      console.warn('raizo assets failed', (ev as CustomEvent<string>).detail);
+      this.failed = true;
+      this.pending = null;
+      this.after = null;
+      this.el?.remove();
+      if (this.onFail) this.onFail();
     });
     this.el.addEventListener('raizo-complete', (ev) => {
       const detail = (ev as CustomEvent<{ state: string }>).detail;
@@ -52,7 +63,7 @@ export class OjijiRig {
   }
 
   get available(): boolean {
-    return this.el !== null;
+    return this.el !== null && !this.failed;
   }
 
   get state(): RigState {
@@ -61,7 +72,7 @@ export class OjijiRig {
 
   // 状態を再生する。単発動作なら、終了後に then() を呼ぶ（新しい play() があれば呼ばない）
   play(state: RigState, then?: () => void): void {
-    if (!this.el) return;
+    if (!this.el || this.failed) return;
     if (!this.ready) {
       this.pending = state;
       this.current = state;
@@ -82,7 +93,7 @@ export class OjijiRig {
 
   // ループ状態（idle / thinking / doubtful）へ。単発動作の途中なら、その終了を待ってから切り替える
   settle(state: RigState): void {
-    if (!this.el) return;
+    if (!this.el || this.failed) return;
     if (ONE_SHOT.has(this.current) && this.after !== null) {
       // 終了後の行き先を差し替える
       const mine = this.serial;
@@ -94,7 +105,7 @@ export class OjijiRig {
 
   // 要素を別の親へ移す（同じ要素を使い回すので、再読み込みも二重再生も起きない）
   mount(parent: HTMLElement): void {
-    if (!this.el) return;
+    if (!this.el || this.failed) return;
     if (this.el.parentElement !== parent) parent.append(this.el);
   }
 

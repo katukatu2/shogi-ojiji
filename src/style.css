@@ -12,6 +12,14 @@
   --hint: rgba(40, 180, 90, 0.55);
   --panel: #fffaf0;
   --navy: #2b3a55;
+  /* 盤の幅。横幅・画面の高さ（盤以外の行に約 250px）・上限の小さい方 */
+  --board-w: min(100vw - 16px, 100vh - 250px, 480px);
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --board-w: min(100vw - 16px, 100dvh - 250px, 480px);
+  }
 }
 
 * {
@@ -49,6 +57,7 @@ button {
   gap: 6px;
   padding: 8px 8px calc(12px + env(safe-area-inset-bottom));
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .topbar {
@@ -64,6 +73,10 @@ button {
 .topbar .title {
   font-weight: 700;
   font-size: 14px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar .status {
@@ -90,10 +103,41 @@ button {
   font-size: 12px;
 }
 
+/* 最終手と課題の行 */
+.infoline {
+  width: var(--board-w);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
 .lastmove {
   font-size: 15px;
   min-height: 20px;
   font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+}
+
+.task-chip {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: rgba(255, 255, 255, 0.45);
+  color: #4a3a2a;
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-chip.open {
+  white-space: normal;
 }
 
 .lastmove .check {
@@ -102,7 +146,7 @@ button {
 }
 
 .hand {
-  width: min(100vw - 16px, 60vh, 480px);
+  width: var(--board-w);
   min-height: 44px;
   display: flex;
   align-items: center;
@@ -112,12 +156,34 @@ button {
   border-radius: 8px;
 }
 
-.hand.gote {
-  justify-content: flex-start;
+.hand .hp-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
 }
 
-.hand.sente {
+.hand.gote {
+  position: relative; /* 吹き出しの基準 */
+  min-height: 56px;
+}
+
+.hand.sente .hp-list {
   justify-content: flex-end;
+}
+
+/* 相手の行に同居するオジジの顔。全身ではなく顔だけを 52px で出す */
+.hand .avatar {
+  width: 52px;
+  height: 52px;
+  flex: none;
+}
+
+.hand .avatar svg {
+  width: 100%;
+  height: 100%;
 }
 
 .hand .label {
@@ -173,7 +239,7 @@ button {
 
 .board-wrap {
   position: relative;
-  width: min(100vw - 16px, 60vh, 480px);
+  width: var(--board-w);
 }
 
 .files {
@@ -277,17 +343,21 @@ button {
 }
 
 .controls {
+  width: var(--board-w);
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin-top: 4px;
 }
 
 .controls button {
+  flex: 1;
+  min-width: 0;
   border: 1px solid var(--board-line);
   background: var(--panel);
   border-radius: 8px;
-  padding: 8px 14px;
+  padding: 8px 4px;
   font-size: 14px;
+  white-space: nowrap;
 }
 
 /* ===== オーバーレイ共通 ===== */
@@ -361,7 +431,7 @@ button {
 }
 
 .cutin .face {
-  width: min(52vw, 240px);
+  width: min(40vw, 150px);
   margin: 0 auto;
   animation: slam 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
@@ -492,7 +562,7 @@ button {
 }
 
 .title-screen .face {
-  width: min(56vw, 220px);
+  width: min(34vw, 128px);
 }
 
 .title-screen h1 {
@@ -603,7 +673,7 @@ button {
 
 /* 結果画面: 一言だけ */
 .result .face {
-  width: 120px;
+  width: 100px;
   margin: -6px auto 4px;
 }
 
@@ -845,35 +915,21 @@ raizo-rig {
   max-width: 100%;
 }
 
-/* 対局画面: 盤の上の段。オジジと吹き出し */
-.stage {
-  width: min(100vw - 16px, 60vh, 480px);
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  min-height: 132px;
-}
-
-.stage .stage-face {
-  width: 108px;
-  flex: none;
-}
-
-.stage .stage-face svg {
-  width: 100%;
-  height: auto;
-}
-
+/* 対局画面の吹き出し。相手の行の上に重ねて出す（レイアウトの高さは使わない） */
 .bubble {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  left: 58px;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  pointer-events: none;
   background: rgba(43, 58, 85, 0.94);
   color: #fff;
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 8px 12px;
   font-size: 13px;
   line-height: 1.45;
-  margin-bottom: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   animation: bubbleIn 0.25s ease-out;
   display: flex;
   gap: 8px;
@@ -883,11 +939,11 @@ raizo-rig {
 .bubble::before {
   content: '';
   position: absolute;
-  left: -8px;
-  bottom: 18px;
+  left: 12px;
+  bottom: -8px;
   border: 8px solid transparent;
-  border-right-color: rgba(43, 58, 85, 0.94);
-  border-left: 0;
+  border-top-color: rgba(43, 58, 85, 0.94);
+  border-bottom: 0;
 }
 
 .bubble[hidden] {
@@ -899,7 +955,11 @@ raizo-rig {
 }
 
 .bubble.stern::before {
-  border-right-color: rgba(90, 40, 30, 0.94);
+  border-top-color: rgba(90, 40, 30, 0.94);
+}
+
+.bubble .msg {
+  min-width: 0;
 }
 
 .bubble .msg b {
@@ -913,19 +973,6 @@ raizo-rig {
   height: 40px;
   border-radius: 50%;
   background: #f0c9a2;
-}
-
-/* カットイン・結果・タイトルの中の雷蔵 */
-.cutin .face {
-  width: min(60vw, 260px);
-}
-
-.result .face {
-  width: 150px;
-}
-
-.title-screen .face {
-  width: min(56vw, 240px);
 }
 
 /* ===== 難易度・課題・振り返り ===== */
@@ -969,15 +1016,6 @@ raizo-rig {
   opacity: 0.75;
   margin-top: 6px;
   line-height: 1.5;
-}
-
-.taskline {
-  width: min(100vw - 16px, 60vh, 480px);
-  font-size: 12px;
-  color: #4a3a2a;
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 8px;
-  padding: 4px 8px;
 }
 
 .task-result {

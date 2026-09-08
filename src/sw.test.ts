@@ -22,7 +22,7 @@ function loadWorker() {
   };
   const caches = {
     open: async () => cache,
-    keys: async () => ['ojiji-v1', 'ojiji-v3'],
+    keys: async () => ['ojiji-v1', 'ojiji-v4'],
     delete: async (k: string) => { deleted.push(k); return true; },
   };
   const fetched: string[] = [];

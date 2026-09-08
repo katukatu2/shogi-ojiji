@@ -6,7 +6,7 @@
 
 if (typeof window === 'undefined') {
   // ===== Service Worker 側 =====
-  const CACHE = 'ojiji-v3'; // 中身を大きく変えたら上げる。古いキャッシュは activate で消す
+  const CACHE = 'ojiji-v4'; // 中身を大きく変えたら上げる。古いキャッシュは activate で消す
   // 変わらない大きな素材はキャッシュ優先。それ以外（アプリ本体）はネットワーク優先でキャッシュを控えに使う
   const CACHE_FIRST = /\/(engine|raizo|sfx)\//;
 
