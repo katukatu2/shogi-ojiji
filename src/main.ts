@@ -238,7 +238,7 @@ function startGame(style: Style): void {
   buildGameScreen();
   render();
   game.judge.prefetch(game.pos);
-  showToast('idle', '今日の課題', game.task.text, 6000, 'ui');
+  showToast('idle', '今日の課題', game.task.text, 4000, 'ui');
 }
 
 let boardEl: HTMLElement;
@@ -529,7 +529,7 @@ async function tryMove(m: Move): Promise<void> {
     commit(m, null);
     hintMove = verdict.better;
     render();
-    showToast(verdict.level === 2 ? 'good' : 'doubtful', verdict.headline, verdict.why, 7000);
+    showToast(verdict.level === 2 ? 'good' : 'doubtful', verdict.headline, verdict.why, 6000);
     return;
   }
   if (verdict) {
@@ -749,6 +749,9 @@ let turnId = 0; // プレイヤーが指すたびに増える
 let lineTurn = -1; // 台詞を出した手の番号
 
 function showToast(state: RigState, title: string, body: string, ms: number, kind: ToastKind = 'reaction'): void {
+  // 吹き出しが出ている間は、どんな台詞も出さない（置き換えも順番待ちもしない）。
+  // これで台詞が重なったり、パッと切り替わったりしない
+  if (!nodEl.hidden) return;
   if (kind !== 'ui') {
     if (lineTurn === turnId) return; // この手にはもう一言出している
     lineTurn = turnId;
@@ -787,7 +790,7 @@ const EXPR_OF: Record<RigState, Expression> = {
 
 // 良い手への反応。褒める台詞は出さず、頷きと一言の解説だけ
 function showNod(p: Praise): void {
-  showToast('nod', '', p.comment, 6000);
+  showToast('nod', '', p.comment, 4500);
 }
 
 function endGame(result: Result): void {
