@@ -824,9 +824,14 @@ button {
   line-height: 1.6;
 }
 
+.title-screen .credit a {
+  color: inherit;
+}
+
 .title-screen .credit {
   margin: 8px 0 0;
   font-size: 11px;
+  line-height: 1.6;
   opacity: 0.55;
 }
 

@@ -13,7 +13,7 @@ import { OjijiRig, RigState } from './ui/rig';
 import { LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion } from './game/progress';
 import { keyMoments, momentCaption, MoveLog, KeyMoment } from './game/review';
 import { miniBoard, positionAfter } from './ui/miniboard';
-import { playThunder, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug } from './ui/audio';
+import { playThunder, playPiece, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug, pieceElementForDebug } from './ui/audio';
 
 const STYLES: { style: Style | null; name: string; desc: string }[] = ALL_STYLES.map((s) => ({
   style: s,
@@ -244,7 +244,16 @@ function showTitle(): void {
   ]) ul.append(el('li', '', t));
   how.append(ul);
   s.append(how);
-  s.append(el('p', 'credit', '将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite'));
+  const credit = el('p', 'credit');
+  credit.append(document.createTextNode('将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite'));
+  credit.append(el('br'));
+  credit.append(document.createTextNode('駒音: 無料効果音で遊ぼう！（小森平）　'));
+  const link = el('a', '', 'https://taira-komori.net/');
+  link.setAttribute('href', 'https://taira-komori.net/');
+  link.setAttribute('target', '_blank');
+  link.setAttribute('rel', 'noopener');
+  credit.append(link);
+  s.append(credit);
 
   app.append(s);
   ensureEngine();
@@ -723,6 +732,7 @@ function commit(m: Move, praise: Praise | null, line?: () => void): void {
   turnId++;
   const captured = game.pos.get(m.to.x, m.to.y);
   game.pos.apply(m);
+  playPiece();
   game.lastMove = m;
   if (line) {
     line(); // この手への反応（段階 2・3 の一言）。独り言より先に出す
@@ -774,6 +784,7 @@ async function npcMove(): Promise<void> {
     return;
   }
   pos.apply(m);
+  playPiece();
   g.lastMove = m;
   render();
   if (pos.isGameOver()) {
@@ -1148,7 +1159,7 @@ function closingWord(g: Game, result: Result): string {
 
 // 開発時だけ、画面の確認用に内部関数を公開する
 if (import.meta.env.DEV) {
-  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, setMuted, playThunder };
+  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, piece: pieceElementForDebug, setMuted, playThunder, playPiece };
 }
 
 showTitle();

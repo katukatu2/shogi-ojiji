@@ -47,7 +47,7 @@ src/
 public/engine/  やねうら王 WebAssembly 版（npm run engine:copy で node_modules から複製）
 public/coi-serviceworker.js  COOP/COEP ヘッダーを付けられない環境向けの Service Worker
 public/raizo/  雷蔵の顔アニメーション（raizo-rig.js）と顔の WebP（faces/）
-public/sfx/ 効果音（bakamon_thunder.mp3。「ばかもーん！」の雷）
+public/sfx/ 効果音（koma.mp3 の駒音、bakamon_thunder.mp3 の雷）
 assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。アプリには同梱せず、scripts/ で public/ 用に変換する
 ```
 
@@ -118,6 +118,7 @@ assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。�
 - 状態の対応: idle（通常）／thinking（思考中・ヒント・待った・助言）／nod（良い手。台詞なし）／good（段階 2。湯飲みで一服）／doubtful（段階 3・王手）／bad（段階 4）／angry（段階 5）／surprised（プレイヤーの勝ち）。叱った後は解説中 thinking、閉じたら通常へ。
 - 対局画面では盤の上の「舞台」にオジジと吹き出しを置き、盤・持ち駒・ボタンとは重ならない。
 - 雷蔵の画像はロスレス WebP（元 PNG と同じ内容、合計 2.4MB）。
+- 駒音は `public/sfx/koma.mp3`（約 15KB。「無料効果音で遊ぼう！（小森平）https://taira-komori.net/」の「将棋の駒パチン４」nc260487。容量が小さいので変換なしで使う）。プレイヤーとオジジの手を盤に反映するたびに鳴らす。
 - 音声はオジジの声を使わず、「ばかもーん！」（段階 5）の場面だけ雷の効果音 `public/sfx/bakamon_thunder.mp3`（モノラル 96kbps、約 33KB）を鳴らす（`src/ui/audio.ts`）。元の WAV は `assets-src/sfx/` にあり、`node scripts/encode-sfx.mjs` で変換する（ffmpeg 不要、lamejs を使う）。1 本の `<audio>` で鳴らし、前の音を止めてから鳴らす。ミュートや再生失敗でも進行は止まらない。最初のタップで `<audio>` を解錠する。ファイルを差し替えたら `SFX_VERSION` を変える。
 
 ## スマホアプリ化（Capacitor）
@@ -132,6 +133,10 @@ npx cap add ios          # macOS + Xcode が必要。iOS はまだ未生成
 ## ライセンス
 
 やねうら王（GPLv3）を組み込んでいるため、このプロジェクト全体も GPLv3 で公開する（`LICENSE`）。
+
+使用素材のクレジット（アプリのタイトル画面と概要欄に表記する）:
+- 将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite
+- 駒音: 無料効果音で遊ぼう！（小森平）　https://taira-komori.net/
 iOS の App Store は GPL との相性問題が指摘されているため、まず Web と Android を対象にする。
 
 ## 自動対局でオジジの台詞を点検する
