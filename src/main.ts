@@ -422,14 +422,15 @@ function render(): void {
   scoldEl.textContent = `叱られ ${game.scolded}回`;
 
   if (game.busy && !game.result && cutinEl.hidden) {
-    lastMoveEl.textContent = pos.turn === 0 ? 'オジジが手を見ている…' : 'オジジが考えている…';
+    const prev = pos.moves.length >= 2 ? pos.moves[pos.moves.length - 2] : null;
+    lastMoveEl.textContent = game.lastMove ? `${moveToKanji(game.lastMove, (1 - pos.turn) as Color, prev)}　…` : '…';
   } else if (game.lastMove) {
     const prev = pos.moves.length >= 2 ? pos.moves[pos.moves.length - 2] : null;
     const color = (1 - pos.turn) as Color;
     lastMoveEl.textContent = moveToKanji(game.lastMove, color, prev);
     if (inCheck) lastMoveEl.append(el('span', 'check', '王手！'));
   } else {
-    lastMoveEl.textContent = 'あなたの手番です（先手）。自由に指してよい。';
+    lastMoveEl.textContent = '先手番（あなた）';
   }
 }
 
@@ -526,10 +527,9 @@ async function tryMove(m: Move): Promise<void> {
     // 段階 2・3: 手は止めず、吹き出しで一言。オジジの手を緑で示す
     g.busy = false;
     hintMove = null;
-    commit(m, null);
+    commit(m, null, () => showToast(verdict.level === 2 ? 'good' : 'doubtful', verdict.headline, verdict.why, 6000));
     hintMove = verdict.better;
     render();
-    showToast(verdict.level === 2 ? 'good' : 'doubtful', verdict.headline, verdict.why, 6000);
     return;
   }
   if (verdict) {
@@ -545,6 +545,7 @@ async function tryMove(m: Move): Promise<void> {
       commit(m, null);
       lineTurn = turnId; // カットインがこの手の一言。続くオジジの独り言は出さない
     } else {
+      turnId++; // 指し直す手は新しい手として数える（カットインの一言に続く反応を出せるように）
       hintMove = verdict.better;
       render();
     }
@@ -555,13 +556,15 @@ async function tryMove(m: Move): Promise<void> {
   commit(m, praise);
 }
 
-function commit(m: Move, praise: Praise | null): void {
+function commit(m: Move, praise: Praise | null, line?: () => void): void {
   if (!game) return;
   turnId++;
   const captured = game.pos.get(m.to.x, m.to.y);
   game.pos.apply(m);
   game.lastMove = m;
-  if (praise && praise.comment) {
+  if (line) {
+    line(); // この手への反応（段階 2・3 の一言）。独り言より先に出す
+  } else if (praise && praise.comment) {
     if (!game.learned.some((l) => l.comment === praise.comment)) game.learned.push(praise);
     showNod(praise);
   } else if (captured && PIECE_VALUE[captured.type] >= 5 && captured.type !== 'OU') {
@@ -727,6 +730,7 @@ function showCutin(v: Verdict): Promise<boolean> {
     const go = el('button', 'btn', 'このまま進む');
     const close = (proceed: boolean) => {
       cutinEl.hidden = true;
+      bubbleHiddenAt = performance.now();
       if (stageFaceEl) faceInto(stageFaceEl, 'normal');
       rig.settle(baseState());
       resolve(proceed);
@@ -747,11 +751,14 @@ function showCutin(v: Verdict): Promise<boolean> {
 type ToastKind = 'reaction' | 'mutter' | 'ui';
 let turnId = 0; // プレイヤーが指すたびに増える
 let lineTurn = -1; // 台詞を出した手の番号
+const BUBBLE_GAP_MS = 1500; // 吹き出しが消えてから次を出すまでの間。続けざまに出さない
+let bubbleHiddenAt = -1e9;
 
 function showToast(state: RigState, title: string, body: string, ms: number, kind: ToastKind = 'reaction'): void {
-  // 吹き出しが出ている間は、どんな台詞も出さない（置き換えも順番待ちもしない）。
-  // これで台詞が重なったり、パッと切り替わったりしない
+  // 吹き出しが出ている間と、消えた直後は、どんな台詞も出さない（置き換えも順番待ちもしない）。
+  // これで台詞が重なったり、続けざまに出たりしない
   if (!nodEl.hidden) return;
+  if (performance.now() - bubbleHiddenAt < BUBBLE_GAP_MS) return;
   if (kind !== 'ui') {
     if (lineTurn === turnId) return; // この手にはもう一言出している
     lineTurn = turnId;
@@ -772,6 +779,7 @@ function showToast(state: RigState, title: string, body: string, ms: number, kin
   window.clearTimeout(nodTimer);
   nodTimer = window.setTimeout(() => {
     nodEl.hidden = true;
+    bubbleHiddenAt = performance.now();
     if (mine === toastSerial) rig.settle(baseState());
   }, ms);
   const back = () => { if (mine === toastSerial) rig.settle(baseState()); };
@@ -798,6 +806,9 @@ function endGame(result: Result): void {
   stopSfx();
   game.result = result;
   game.busy = false;
+  nodEl.hidden = true;
+  window.clearTimeout(nodTimer);
+  toastSerial++;
   const taskDone = game.task.done({
     goodIds: game.judge.firedIds(),
     scolded: game.scolded,
