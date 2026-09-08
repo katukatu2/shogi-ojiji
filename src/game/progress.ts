@@ -133,6 +133,7 @@ export interface StyleRecord {
 export interface Progress {
   level: LevelId;
   styles: Record<string, StyleRecord>;
+  lastStyle?: string; // 前回対局した戦法。タイトルの「前回の設定で始める」と対局設定の初期選択に使う
 }
 
 const KEY = 'ojiji.progress.v2';
@@ -148,6 +149,7 @@ export function loadProgress(storage: Pick<Storage, 'getItem'> | null = safeStor
     const p = JSON.parse(raw) as Progress;
     if (!p || typeof p !== 'object' || !p.styles) return emptyProgress();
     p.level = levelById(p.level).id;
+    if (typeof p.lastStyle !== 'string') delete p.lastStyle;
     return p;
   } catch {
     return emptyProgress();

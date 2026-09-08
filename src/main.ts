@@ -5,7 +5,8 @@ import { chooseMove } from './ai/search';
 import { Engine, engineSupported, browserEngineFactory, Analysis } from './ai/engine';
 import { Judge, Verdict, Praise, Judgement, safeMove, bestCaptureGain } from './style/judge';
 import { Style, PlanVariant } from './style/types';
-import { STYLES as ALL_STYLES } from './style/index';
+import { STYLES as ALL_STYLES, findStyle } from './style/index';
+import { formationOf } from './game/formation';
 import { choosePlanMove, planApplies, planKey, PlanState } from './style/plan';
 import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
@@ -141,10 +142,57 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e;
 }
 
+// ===== 画面遷移と「戻る」 =====
+// 画面は タイトル(0) → 対局設定(1) → 対局(2) の深さで履歴に積む。
+// ブラウザやスマートフォンの「戻る」は popstate で受け、画面ごとの規則で処理する
+// （設定→タイトル、対局中→確認してからタイトル、結果→タイトル）。Capacitor の Android は WebView が戻れる間は
+// 戻る操作を WebView に渡すので、同じ道を通る。
+// アプリ内のボタンで浅い画面へ行くときは、その分だけ履歴を戻し、そのとき届く popstate は無視する。
+type ScreenName = 'title' | 'settings' | 'game';
+const SCREEN_DEPTH: Record<ScreenName, number> = { title: 0, settings: 1, game: 2 };
+let screen: ScreenName = 'title';
+let depth = 0; // 積んである履歴の数
+let ignorePops = 0; // 自分で戻した分の popstate を読み飛ばす
+
+function goToScreen(name: ScreenName): void {
+  const want = SCREEN_DEPTH[name];
+  screen = name;
+  if (want > depth) {
+    for (; depth < want; depth++) history.pushState({ ojiji: depth + 1 }, '');
+  } else if (want < depth) {
+    ignorePops += depth - want;
+    history.go(want - depth);
+    depth = want;
+  }
+}
+
+window.addEventListener('popstate', () => {
+  if (ignorePops > 0) {
+    ignorePops--;
+    return;
+  }
+  depth = Math.max(0, depth - 1);
+  if (screen === 'settings') {
+    showTitle();
+    return;
+  }
+  if (screen === 'game') {
+    if (game && !game.result) {
+      if (confirm('対局を中断してタイトルに戻りますか？')) showTitle();
+      else goToScreen('game'); // 押し戻す
+      return;
+    }
+    showTitle();
+  }
+});
+
 // ===== タイトル =====
+// タイトルは、オジジ・題名・一言・ボタン・遊び方だけ。強さと戦法は「対局設定」で選ぶ。
+// 2 回目以降は「前回の設定で始める」で 1 タップで対局に入れる
 function showTitle(): void {
   stopSfx();
   game = null;
+  goToScreen('title');
   app.innerHTML = '';
   const s = el('div', 'title-screen');
   // タイトルだけは全身。体は静止画（public/raizo/body.webp）で、その上に顔のリグを重ねる
@@ -161,52 +209,29 @@ function showTitle(): void {
   rig.settle('idle');
   s.append(face);
   s.append(el('h1', '', '将棋オジジの定石指南（仮）'));
-  const sub = el('p', 'sub');
-  sub.innerHTML = 'オジジは得意戦法で囲ってくる。あなたは自由に指してよい。<br>ただし、その戦法相手にやってはいけない手を指すと、オジジが飛んでくる。';
-  s.append(sub);
-  // 難易度
-  const levelBox = el('div', 'level-box');
-  levelBox.append(el('div', 'level-title', 'オジジの強さ'));
-  const levelRow = el('div', 'level-row');
-  for (const lv of LEVELS) {
-    const b = el('button', 'level-btn' + (lv.id === progress.level ? ' on' : ''), lv.name);
-    b.title = lv.description;
-    b.addEventListener('click', () => {
-      progress.level = lv.id;
-      saveProgress(progress);
-      showTitle();
+  s.append(el('p', 'sub', 'オジジの得意戦法を相手に、自由に指す。本当に悪い手だけ叱られる。'));
+
+  const actions = el('div', 'title-actions');
+  const last = progress.lastStyle ? findStyle(progress.lastStyle) : undefined;
+  if (last) {
+    const quick = el('button', 'btn primary big');
+    quick.append(document.createTextNode('前回の設定で始める'));
+    quick.append(el('small', '', `${last.name}・${levelById(progress.level).name}`));
+    quick.addEventListener('click', () => {
+      warmUp();
+      startGame(last);
     });
-    levelRow.append(b);
+    const change = el('button', 'btn', '戦法・強さを変える');
+    change.addEventListener('click', showSettings);
+    actions.append(quick, change);
+  } else {
+    const start = el('button', 'btn primary big', 'はじめる');
+    start.addEventListener('click', showSettings);
+    actions.append(start);
   }
-  levelBox.append(levelRow);
-  levelBox.append(el('div', 'level-desc', levelById(progress.level).description));
-  s.append(levelBox);
+  s.append(actions);
 
-  // 戦法の一覧。1 行に名前・短い説明・成績。タップで対局開始
-  const list = el('div', 'joseki-list');
-  list.append(el('div', 'list-title', 'オジジの戦法を選ぶ'));
-  const done = doneTaskSet(progress);
-  for (const j of STYLES) {
-    const b = el('button', 'joseki-btn');
-    const rec = j.style ? progress.styles[j.style.id] : undefined;
-    const taskCount = j.style ? [...done].filter((k) => k.startsWith(j.style!.id + ':')).length : 0;
-    const recText = rec && rec.games > 0
-      ? `<em>${rec.wins}勝 ${rec.games}局</em>${rec.scolded > 0 ? `<em>ばかもん ${rec.scolded}回</em>` : `<em>課題 ${taskCount}</em>`}`
-      : '<em>未対局</em>';
-    b.innerHTML = `<span class="jn"><b>${j.name}</b><span class="jd">${j.desc}</span></span><span class="jr">${recText}</span><span class="chev">›</span>`;
-    b.disabled = !j.style;
-    if (j.style) {
-      const style = j.style;
-      b.addEventListener('click', () => {
-        warmUp();
-        startGame(style);
-      });
-    }
-    list.append(b);
-  }
-  s.append(list);
-
-  // 遊び方（折りたたみ）
+  // 遊び方（折りたたみ。初回に一度読むもの）
   const how = el('details', 'howto');
   how.append(el('summary', '', '遊び方'));
   const ul = el('ul');
@@ -225,10 +250,123 @@ function showTitle(): void {
   ensureEngine();
 }
 
+// ===== 対局設定 =====
+// 強さと戦法を選ぶ。前回の戦法が選択済みで開き、そのまま「この設定で対局」で始められる。
+// 選んだ戦法の囲いの形・成績・次の課題を見せて、選ぶ理由を作る
+let pendingStyleId: string | null = null;
+
+function showSettings(): void {
+  stopSfx();
+  game = null;
+  goToScreen('settings');
+  app.innerHTML = '';
+  const s = el('div', 'settings-screen');
+
+  const head = el('div', 'settings-head');
+  const back = el('button', 'back', '‹ タイトル');
+  back.addEventListener('click', showTitle);
+  head.append(back, el('h2', '', '対局設定'), el('span'));
+  s.append(head);
+
+  // 強さ
+  const levelBox = el('div', 'level-box');
+  const renderLevels = (): void => {
+    levelBox.innerHTML = '';
+    levelBox.append(el('div', 'level-title', 'オジジの強さ'));
+    const row = el('div', 'level-row');
+    for (const lv of LEVELS) {
+      const b = el('button', 'level-btn' + (lv.id === progress.level ? ' on' : ''), lv.name);
+      b.addEventListener('click', () => {
+        progress.level = lv.id;
+        saveProgress(progress);
+        renderLevels();
+        renderFoot();
+      });
+      row.append(b);
+    }
+    levelBox.append(row);
+    levelBox.append(el('div', 'level-desc', levelById(progress.level).description));
+  };
+  s.append(levelBox);
+
+  // 戦法
+  const done = doneTaskSet(progress);
+  if (!pendingStyleId || !findStyle(pendingStyleId)) {
+    pendingStyleId = progress.lastStyle && findStyle(progress.lastStyle) ? progress.lastStyle : ALL_STYLES[0].id;
+  }
+  const selected = (): Style => findStyle(pendingStyleId!) ?? ALL_STYLES[0];
+  s.append(el('div', 'section-title', 'オジジの戦法'));
+  const list = el('div', 'joseki-list');
+  const rows = new Map<string, HTMLElement>();
+  for (const j of STYLES) {
+    if (!j.style) continue;
+    const style = j.style;
+    const b = el('button', 'joseki-btn');
+    const rec = progress.styles[style.id];
+    const taskCount = [...done].filter((k) => k.startsWith(style.id + ':')).length;
+    const recText = rec && rec.games > 0
+      ? `<em>${rec.wins}勝 ${rec.games}局</em>${rec.scolded > 0 ? `<em>ばかもん ${rec.scolded}回</em>` : `<em>課題 ${taskCount}</em>`}`
+      : '<em>未対局</em>';
+    b.innerHTML = `<span class="jn"><b>${j.name}</b><span class="jd">${j.desc}</span></span><span class="jr">${recText}</span>`;
+    b.addEventListener('click', () => {
+      pendingStyleId = style.id;
+      for (const [id, r] of rows) r.classList.toggle('on', id === style.id);
+      renderPreview();
+      renderFoot();
+      preview.scrollIntoView({ block: 'nearest' }); // 囲いと課題が見える位置まで
+    });
+    rows.set(style.id, b);
+    list.append(b);
+  }
+  s.append(list);
+
+  // 選んだ戦法の囲い・成績・次の課題
+  const preview = el('div', 'preview');
+  const renderPreview = (): void => {
+    const style = selected();
+    preview.innerHTML = '';
+    preview.append(miniBoard(formationOf(style)));
+    const text = el('div', 'ptext');
+    text.append(el('b', '', `${style.name}の駒組み`));
+    text.append(el('div', '', style.plans[0]?.name ? `まずは${style.plans[0].name}。対局ごとに形を変えてくる。` : ''));
+    const rec = progress.styles[style.id];
+    text.append(el('div', 'pline', rec && rec.games > 0 ? `成績: ${rec.wins}勝 ${rec.games}局・ばかもん ${rec.scolded}回` : '成績: まだ指していない'));
+    text.append(el('div', 'pline', `次の課題: ${pickTask(style, done).text}`));
+    preview.append(text);
+  };
+  s.append(preview);
+
+  // 下に固定の開始ボタン
+  const foot = el('div', 'settings-foot');
+  const go = el('button', 'btn primary big');
+  const renderFoot = (): void => {
+    go.innerHTML = '';
+    go.append(document.createTextNode('この設定で対局'));
+    go.append(el('small', '', `${selected().name}・${levelById(progress.level).name}`));
+  };
+  go.addEventListener('click', () => {
+    warmUp();
+    startGame(selected());
+  });
+  foot.append(go);
+  s.append(foot);
+
+  renderLevels();
+  for (const [id, r] of rows) r.classList.toggle('on', id === pendingStyleId);
+  renderPreview();
+  renderFoot();
+  app.append(s);
+  ensureEngine();
+}
+
 // ===== 対局 =====
 function startGame(style: Style): void {
   stopSfx();
   ensureEngine();
+  progress.lastStyle = style.id;
+  pendingStyleId = style.id;
+  saveProgress(progress);
+  goToScreen('game');
   game = {
     style,
     pos: Position.initial(),
@@ -914,12 +1052,15 @@ function showResult(result: Result): void {
     panel.append(row);
   }
 
-  const row = el('div', 'btn-row');
-  const again = el('button', 'btn primary', 'もう一局');
+  // 対局後の動線: 同じ設定で再戦が主。戦法を変えるなら設定へ、タイトルは明示したときだけ
+  const row = el('div', 'btn-row stack');
+  const again = el('button', 'btn primary', '同じ設定でもう一局');
+  const change = el('button', 'btn', '戦法を変える');
   const title = el('button', 'btn', 'タイトルへ');
   again.addEventListener('click', () => startGame(game!.style));
+  change.addEventListener('click', showSettings);
   title.addEventListener('click', showTitle);
-  row.append(again, title);
+  row.append(again, change, title);
   panel.append(row);
   resultEl.append(panel);
   resultEl.hidden = false;

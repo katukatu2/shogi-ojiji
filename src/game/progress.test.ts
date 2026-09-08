@@ -79,3 +79,16 @@ describe('成績と昇級', () => {
     expect(p.level).toBe('apprentice');
   });
 });
+
+describe('前回の戦法', () => {
+  it('保存され、読み戻せる。壊れた値は捨てる', () => {
+    const st = memoryStorage();
+    const p = emptyProgress();
+    p.lastStyle = 'yagura';
+    saveProgress(p, st);
+    expect(loadProgress(st).lastStyle).toBe('yagura');
+    st.setItem('ojiji.progress.v2', JSON.stringify({ level: 'student', styles: {}, lastStyle: 5 }));
+    expect(loadProgress(st).lastStyle).toBeUndefined();
+    expect(loadProgress(st).level).toBe('student');
+  });
+});

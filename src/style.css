@@ -1037,6 +1037,158 @@ raizo-rig {
   background: #f0c9a2;
 }
 
+/* ===== タイトルのボタン ===== */
+.title-actions {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn.big {
+  padding: 13px 16px;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.btn.big small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+  margin-top: 3px;
+}
+
+.title-actions .btn:not(.primary) {
+  background: var(--panel);
+  border: 1px solid var(--board-line);
+}
+
+/* ===== 対局設定 ===== */
+.settings-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px calc(96px + env(safe-area-inset-bottom));
+}
+
+.settings-head {
+  width: 100%;
+  max-width: 360px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.settings-head .back {
+  justify-self: start;
+  border: 0;
+  background: none;
+  font-size: 15px;
+  color: var(--navy);
+  padding: 8px 0;
+}
+
+.settings-head h2 {
+  margin: 0;
+  font-size: 18px;
+  text-align: center;
+}
+
+.section-title {
+  width: 100%;
+  max-width: 360px;
+  font-size: 12px;
+  opacity: 0.7;
+  padding: 0 4px;
+  margin-top: 2px;
+}
+
+.settings-screen .joseki-list {
+  margin-top: 0;
+}
+
+/* 設定画面は 1 画面に収めたいので、各行を少し詰める */
+.settings-screen .joseki-btn {
+  min-height: 46px;
+  padding: 6px 10px 6px 12px;
+}
+
+.settings-screen .level-box {
+  padding: 6px 10px 8px;
+}
+
+.joseki-btn.on {
+  border-color: var(--navy);
+  box-shadow: inset 0 0 0 2px var(--navy);
+}
+
+/* 選んだ戦法の囲い・成績・次の課題 */
+.preview {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 12px;
+  padding: 10px;
+  scroll-margin-bottom: 104px; /* 下の固定ボタンに隠れない位置まで scrollIntoView する */
+}
+
+.preview .mini-board {
+  width: 104px;
+  flex: none;
+}
+
+.preview .ptext {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.preview .ptext b {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.preview .pline {
+  margin-top: 4px;
+}
+
+.settings-foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 16px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(to bottom, rgba(239, 230, 210, 0), var(--bg) 40%);
+  display: flex;
+  justify-content: center;
+  z-index: 10;
+}
+
+.settings-foot .btn {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* 結果画面のボタン: 主ボタンを 1 行目に、残り二つを 2 行目に */
+.btn-row.stack {
+  flex-wrap: wrap;
+}
+
+.btn-row.stack .primary {
+  flex-basis: 100%;
+}
+
 /* ===== 難易度・課題・振り返り ===== */
 .level-box {
   width: 100%;
