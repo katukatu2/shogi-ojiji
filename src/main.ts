@@ -238,7 +238,6 @@ function startGame(style: Style): void {
   buildGameScreen();
   render();
   game.judge.prefetch(game.pos);
-  showToast('idle', '今日の課題', game.task.text, 4000, 'ui');
 }
 
 let boardEl: HTMLElement;

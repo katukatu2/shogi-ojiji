@@ -6,7 +6,7 @@
 // ファイルを差し替えたときはここを変えると、古いキャッシュを使わなくなる
 const SFX_VERSION = '2026-09-08a';
 const THUNDER = 'sfx/bakamon_thunder.wav';
-const THUNDER_VOLUME = 0.2; // 雷は大きすぎるので 20% の音量で鳴らす
+const THUNDER_VOLUME = 0.1; // 雷は大きすぎるので 10% の音量で鳴らす
 
 let muted = false;
 let audio: HTMLAudioElement | null = null;
