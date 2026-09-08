@@ -648,7 +648,7 @@ button {
 
 .joseki-btn .jd {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.75;
   white-space: nowrap;
   overflow: hidden;
@@ -1133,11 +1133,11 @@ raizo-rig {
   width: 100%;
   max-width: 360px;
   display: flex;
-  gap: 12px;
+  gap: 18px;
   align-items: flex-start;
   background: rgba(255, 255, 255, 0.45);
   border-radius: 12px;
-  padding: 10px;
+  padding: 12px 14px;
   scroll-margin-bottom: 104px; /* 下の固定ボタンに隠れない位置まで scrollIntoView する */
 }
 
@@ -1149,18 +1149,18 @@ raizo-rig {
 .preview .ptext {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .preview .ptext b {
   display: block;
-  font-size: 14px;
-  margin-bottom: 2px;
+  font-size: 16px;
+  margin-bottom: 4px;
 }
 
 .preview .pline {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .settings-foot {
@@ -1264,12 +1264,117 @@ raizo-rig {
   padding-bottom: 4px;
 }
 
+.result h3 small {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.6;
+  margin-left: 8px;
+}
+
 .moment {
   flex: 0 0 150px;
   background: #fff;
   border-radius: 10px;
   padding: 6px;
   border: 1px solid #e3d9c4;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.moment:active {
+  background: #f6f1e6;
+}
+
+/* 今日の 3 手の拡大表示 */
+.moment-view {
+  z-index: 70;
+}
+
+.moment-view .panel {
+  max-width: 400px;
+  padding: 14px 16px 16px;
+}
+
+.moment-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 17px;
+}
+
+.moment-head .tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(178, 58, 42, 0.1);
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+
+.moment-head .tag.good {
+  color: #1f7a3a;
+  background: rgba(31, 122, 58, 0.12);
+}
+
+.big-board {
+  width: min(100%, 340px);
+  margin: 10px auto 8px;
+}
+
+.mini-board.large .cell {
+  border-width: 1px;
+}
+
+.mini-board.large .piece {
+  font-size: clamp(14px, 4.4vmin, 24px);
+  border-radius: 2px;
+}
+
+.seg {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.seg-btn {
+  border: 1px solid var(--board-line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 14px;
+}
+
+.seg-btn.on {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+}
+
+.moment-eval {
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.moment-why {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.moment-better {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f7a3a;
+}
+
+.moment-view .btn.close {
+  width: 100%;
+  margin-top: 8px;
 }
 
 .moment.good {

@@ -11,6 +11,7 @@ export interface MoveLog {
   headline: string; // オジジの反応の見出し（無ければ空）
   why: string; // 説明（無ければ空）
   betterKanji: string; // 正解の手（無ければ空）
+  betterUsi?: string; // 正解の手（USI。拡大表示で盤に印を付ける）
   praise: string; // 頷きの一言（無ければ空）
 }
 
