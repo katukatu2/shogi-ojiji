@@ -12,7 +12,7 @@ import { OjijiRig, RigState } from './ui/rig';
 import { LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion } from './game/progress';
 import { keyMoments, momentCaption, MoveLog } from './game/review';
 import { miniBoard, positionAfter } from './ui/miniboard';
-import { playVoice, stopVoice, setMuted, isMuted, warmUp, voiceElementForDebug } from './ui/audio';
+import { playThunder, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug } from './ui/audio';
 
 const STYLES: { style: Style | null; name: string; desc: string }[] = ALL_STYLES.map((s) => ({
   style: s,
@@ -139,7 +139,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 // ===== タイトル =====
 function showTitle(): void {
-  stopVoice();
+  stopSfx();
   game = null;
   app.innerHTML = '';
   const s = el('div', 'title-screen');
@@ -202,7 +202,7 @@ function showTitle(): void {
   ]) ul.append(el('li', '', t));
   how.append(ul);
   s.append(how);
-  s.append(el('p', 'credit', '将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite ／ 雷蔵の音声：VOICEVOX:麒ヶ島宗麟'));
+  s.append(el('p', 'credit', '将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite'));
 
   app.append(s);
   ensureEngine();
@@ -210,7 +210,7 @@ function showTitle(): void {
 
 // ===== 対局 =====
 function startGame(style: Style): void {
-  stopVoice();
+  stopSfx();
   ensureEngine();
   game = {
     style,
@@ -238,7 +238,7 @@ function startGame(style: Style): void {
   buildGameScreen();
   render();
   game.judge.prefetch(game.pos);
-  showToast('idle', '今日の課題', game.task.text, 6000, 'high');
+  showToast('idle', '今日の課題', game.task.text, 6000, 'ui');
 }
 
 let boardEl: HTMLElement;
@@ -303,10 +303,8 @@ function buildGameScreen(): void {
   rig.settle('idle');
   nodEl = el('div', 'bubble');
   nodEl.hidden = true;
-  pendingHigh = null;
-  pendingLow = null;
-  bubbleShownAt = -1e9;
-  window.clearTimeout(bubbleQueueTimer);
+  turnId = 0;
+  lineTurn = -1;
   stage.append(stageFace, nodEl);
   g.append(stage);
 
@@ -545,6 +543,7 @@ async function tryMove(m: Move): Promise<void> {
       g.judge.ignore(verdict.ignoreKey);
       hintMove = null;
       commit(m, null);
+      lineTurn = turnId; // カットインがこの手の一言。続くオジジの独り言は出さない
     } else {
       hintMove = verdict.better;
       render();
@@ -558,6 +557,7 @@ async function tryMove(m: Move): Promise<void> {
 
 function commit(m: Move, praise: Praise | null): void {
   if (!game) return;
+  turnId++;
   const captured = game.pos.get(m.to.x, m.to.y);
   game.pos.apply(m);
   game.lastMove = m;
@@ -565,9 +565,9 @@ function commit(m: Move, praise: Praise | null): void {
     if (!game.learned.some((l) => l.comment === praise.comment)) game.learned.push(praise);
     showNod(praise);
   } else if (captured && PIECE_VALUE[captured.type] >= 5 && captured.type !== 'OU') {
-    showToast('doubtful', 'オジジ', `むう、${PIECE_NAME[captured.type]}を取られたか。`, 2500, 'low');
+    showToast('doubtful', 'オジジ', `むう、${PIECE_NAME[captured.type]}を取られたか。`, 2500, 'mutter');
   } else if (game.pos.inCheck(1)) {
-    showToast('thinking', 'オジジ', '王手か。受けてみせよう。', 2500, 'low');
+    showToast('thinking', 'オジジ', '王手か。受けてみせよう。', 2500, 'mutter');
   }
   render();
   if (game.pos.isGameOver()) {
@@ -624,14 +624,14 @@ async function npcMove(): Promise<void> {
 function ojijiMutters(g: Game, m: Move): void {
   const comment = g.style.planComments?.[planKey(m)];
   if (comment) {
-    showToast('idle', 'オジジ', comment, 4500, 'low');
+    showToast('idle', 'オジジ', comment, 4500, 'mutter');
     return;
   }
   if (g.pos.inCheck(0)) {
     // 連続王手のたびに言わない
     if (g.pos.moves.length - g.lastCheckMutter >= 6) {
       g.lastCheckMutter = g.pos.moves.length;
-      showToast('doubtful', 'オジジ', '王手じゃ。', 2500, 'low');
+      showToast('doubtful', 'オジジ', '王手じゃ。', 2500, 'mutter');
     }
     return;
   }
@@ -641,7 +641,7 @@ function ojijiMutters(g: Game, m: Move): void {
     if (threat.gain >= 5 && threat.target && threat.victim) {
       g.lastWhisper = g.pos.moves.length;
       const t = threat.target.to;
-      showToast('thinking', 'オジジは小声で言った', `……${sqToKanji(t)}の${PIECE_NAME[threat.victim]}に狙いをつけたぞ。気づいておるか。`, 5000, 'low');
+      showToast('thinking', 'オジジは小声で言った', `……${sqToKanji(t)}の${PIECE_NAME[threat.victim]}に狙いをつけたぞ。気づいておるか。`, 5000, 'mutter');
     }
   }
 }
@@ -667,12 +667,13 @@ function takeBack(): void {
   g.pos.undo();
   g.pos.undo();
   g.matta++;
+  turnId++;
   g.lastMove = g.pos.moves.length > 0 ? g.pos.moves[g.pos.moves.length - 1] : null;
   selectedSq = null;
   selectedHand = null;
   hintMove = null;
   render();
-  showToast('thinking', '待ったか', 'まあ、勉強のうちじゃ。今度はよく考えよ。', 3000);
+  showToast('thinking', '待ったか', 'まあ、勉強のうちじゃ。今度はよく考えよ。', 3000, 'ui');
   g.judge.prefetch(g.pos);
 }
 
@@ -681,7 +682,7 @@ async function showHint(): Promise<void> {
   const g = game;
   if (!g || g.busy || g.result || g.pos.turn !== 0) return;
   if (!engine) {
-    showToast('thinking', 'ヒント', 'この環境では将棋エンジンが使えないので、ヒントは出せん。', 4000);
+    showToast('thinking', 'ヒント', 'この環境では将棋エンジンが使えないので、ヒントは出せん。', 4000, 'ui');
     return;
   }
   try {
@@ -692,7 +693,7 @@ async function showHint(): Promise<void> {
     g.hints++;
     hintMove = m;
     render();
-    showToast('thinking', 'ヒント', `ワシなら${moveToKanji(m, 0)}じゃ。理由は自分で考えよ。`, 5000);
+    showToast('thinking', 'ヒント', `ワシなら${moveToKanji(m, 0)}じゃ。理由は自分で考えよ。`, 5000, 'ui');
   } catch (err) {
     console.warn('hint failed', err);
   }
@@ -713,10 +714,8 @@ function showCutin(v: Verdict): Promise<boolean> {
     // 叱った後は解説を読む時間なので thinking に移り、閉じたときに平常へ戻す
     nodEl.hidden = true;
     toastSerial++;
-    pendingHigh = null;
-    pendingLow = null;
-    window.clearTimeout(bubbleQueueTimer);
-    void playVoice(shout ? 'angry' : 'bad');
+    lineTurn = turnId; // カットインもこの手の「一言」なので、あとの独り言は出さない
+    if (shout) playThunder();
     rig.play(shout ? 'angry' : 'bad', () => rig.settle('thinking'));
     const panel = el('div', 'panel');
     if (v.headline !== 'ばかもーん！' && v.headline !== 'それは悪手じゃろう') panel.append(el('div', 'headline', v.headline));
@@ -743,40 +742,18 @@ function showCutin(v: Verdict): Promise<boolean> {
 }
 
 // 吹き出しに一言を出し、オジジを対応する動作にする。
-// state が単発動作（nod / good / bad / angry / surprised）なら、終わったあと平常に戻す。
-// ループ動作（thinking / doubtful）なら、吹き出しが消えるときに平常に戻す。
-// 吹き出しは最低でもこの時間は表示する。その間に来た台詞は順番待ちにして、パッと切り替わらないようにする
-const BUBBLE_HOLD_MS = 2600;
-interface QueuedToast { state: RigState; title: string; body: string; ms: number; priority: 'high' | 'low' }
-let bubbleShownAt = -1e9;
-let pendingHigh: QueuedToast | null = null; // 判定・ヒント・待ったなど、プレイヤーの操作への返事
-let pendingLow: QueuedToast | null = null; // 駒組みの独り言・小声など、無くても困らないもの
-let bubbleQueueTimer: number | undefined;
+// 一手につきオジジの台詞は一つ。プレイヤーの手（とそれに続くオジジの手）を「一手」と数え、
+// その手について最初に出た台詞だけを見せる。ヒント・待った・課題の表示（kind = 'ui'）は手と無関係なのでいつでも出す。
+type ToastKind = 'reaction' | 'mutter' | 'ui';
+let turnId = 0; // プレイヤーが指すたびに増える
+let lineTurn = -1; // 台詞を出した手の番号
 
-// priority が low の台詞は、表示中の吹き出しを邪魔しない。high は前の吹き出しの最低表示時間が過ぎてから出す
-function showToast(state: RigState, title: string, body: string, ms: number, priority: 'high' | 'low' = 'high'): void {
-  const elapsed = performance.now() - bubbleShownAt;
-  if (!nodEl.hidden && elapsed < BUBBLE_HOLD_MS) {
-    const item: QueuedToast = { state, title, body, ms, priority };
-    if (priority === 'high') pendingHigh = item; // 新しい返事が古い返事より優先
-    else if (!pendingHigh) pendingLow = item; // 独り言は 1 つだけ覚えておく
-    window.clearTimeout(bubbleQueueTimer);
-    bubbleQueueTimer = window.setTimeout(flushToastQueue, BUBBLE_HOLD_MS - elapsed);
-    return;
+function showToast(state: RigState, title: string, body: string, ms: number, kind: ToastKind = 'reaction'): void {
+  if (kind !== 'ui') {
+    if (lineTurn === turnId) return; // この手にはもう一言出している
+    lineTurn = turnId;
   }
-  showToastNow(state, title, body, ms);
-}
-
-function flushToastQueue(): void {
-  const next = pendingHigh ?? pendingLow;
-  pendingHigh = null;
-  pendingLow = null;
-  if (next) showToastNow(next.state, next.title, next.body, next.ms);
-}
-
-function showToastNow(state: RigState, title: string, body: string, ms: number): void {
   const mine = ++toastSerial;
-  bubbleShownAt = performance.now();
   nodEl.className = 'bubble' + (state === 'doubtful' || state === 'bad' || state === 'angry' ? ' stern' : '');
   nodEl.innerHTML = '';
   if (!rig.available) {
@@ -793,26 +770,9 @@ function showToastNow(state: RigState, title: string, body: string, ms: number):
   nodTimer = window.setTimeout(() => {
     nodEl.hidden = true;
     if (mine === toastSerial) rig.settle(baseState());
-    // 待っている台詞があれば続けて出す
-    if (pendingHigh || pendingLow) flushToastQueue();
   }, ms);
   const back = () => { if (mine === toastSerial) rig.settle(baseState()); };
-  if (state === 'good') {
-    // 「良い手じゃな」は先に声を出し、鳴り終わってから湯飲みを口へ運ぶ。途中で別の出来事が起きたら飲まない
-    rig.settle(baseState());
-    const g = game;
-    void playVoice('good').then((res) => {
-      if (mine !== toastSerial || game !== g) return; // 別の出来事が起きた・画面が変わった
-      if (res.reason === 'stopped') return; // 声を途中で止められたなら、お茶は飲まない
-      rig.play('good', back);
-    });
-  } else if (state === 'nod') {
-    void playVoice('nod');
-    rig.play('nod', back);
-  } else if (state === 'doubtful') {
-    void playVoice('doubtful');
-    rig.settle('doubtful');
-  } else if (state === 'surprised' || state === 'bad' || state === 'angry') {
+  if (state === 'nod' || state === 'good' || state === 'surprised' || state === 'bad' || state === 'angry') {
     rig.play(state, back);
   } else {
     rig.settle(state);
@@ -832,7 +792,7 @@ function showNod(p: Praise): void {
 
 function endGame(result: Result): void {
   if (!game) return;
-  stopVoice();
+  stopSfx();
   game.result = result;
   game.busy = false;
   const taskDone = game.task.done({
@@ -887,9 +847,6 @@ function showResult(result: Result): void {
   faceInto(face, result === 'win' ? 'shocked' : 'normal');
   nodEl.hidden = true;
   toastSerial++;
-  pendingHigh = null;
-  pendingLow = null;
-  window.clearTimeout(bubbleQueueTimer);
   if (result === 'win') rig.play('surprised', () => rig.settle('idle'));
   else rig.settle('idle');
   panel.append(face);
@@ -950,7 +907,7 @@ function closingWord(g: Game, result: Result): string {
 
 // 開発時だけ、画面の確認用に内部関数を公開する
 if (import.meta.env.DEV) {
-  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, ojijiSvg, showToast, rig, voice: voiceElementForDebug, setMuted, playVoice };
+  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, setMuted, playThunder };
 }
 
 showTitle();
