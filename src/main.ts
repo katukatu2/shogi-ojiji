@@ -11,7 +11,7 @@ import { choosePlanMove, planApplies, planKey, PlanState } from './style/plan';
 import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
 import { LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion } from './game/progress';
-import { keyMoments, momentCaption, MoveLog, KeyMoment } from './game/review';
+import { keyMoments, momentCaption, MoveLog, KeyMoment, winProb } from './game/review';
 import { miniBoard, positionAfter } from './ui/miniboard';
 import { playThunder, playPiece, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug, pieceElementForDebug } from './ui/audio';
 
@@ -1122,7 +1122,8 @@ function showMoment(moments: KeyMoment[], index: number, after = false): void {
     if (Math.abs(v) > 3000) return v > 0 ? '先手の詰み筋' : '後手の詰み筋';
     return (v > 0 ? '+' : '') + String(v);
   };
-  panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}`));
+  const pct = (v: number | null): string => (v === null ? '?' : `${Math.round(winProb(v))}%`);
+  panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}　勝率 ${pct(log.before)} → ${pct(log.after)}`));
   panel.append(el('p', 'moment-why', momentCaption(mo)));
   if (mo.kind === 'blunder' && log.betterKanji) {
     panel.append(el('div', 'moment-better', `正解: ${log.betterKanji}${better ? '（指す前の盤に緑で表示）' : ''}`));
