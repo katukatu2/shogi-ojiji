@@ -18,15 +18,17 @@ const flat: Evaluator = {
   analyzeMulti: async () => [{ cp: 0, mate: null, bestmove: null, pv: [], depth: 1 }],
 };
 
-// 手順ごとに決まった評価を返す偽エンジン
-function fakeEvaluator(table: Record<string, Partial<Analysis>>): Evaluator {
-  const lookup = async (moves: string[]): Promise<Analysis> => {
-    const key = moves.join(' ');
+// 手順ごとに決まった評価を返す偽エンジン。SFEN で読まれたら 'sfen:' + SFEN をキーにする。
+// 値を配列にすると MultiPV（最善・次善）として返す
+function fakeEvaluator(table: Record<string, Partial<Analysis> | Partial<Analysis>[]>): Evaluator {
+  const lookupAll = async (moves: string[], opts?: { sfen?: string }): Promise<Analysis[]> => {
+    const key = opts?.sfen ? `sfen:${opts.sfen}` : moves.join(' ');
     const a = table[key];
     if (!a) throw new Error(`no fake analysis for "${key}"`);
-    return { cp: 0, mate: null, bestmove: null, pv: [], depth: 10, ...a };
+    const list = Array.isArray(a) ? a : [a];
+    return list.map((x) => ({ cp: 0, mate: null, bestmove: null, pv: [], depth: 10, ...x }));
   };
-  return { analyze: lookup, analyzeMulti: async (m) => [await lookup(m)] };
+  return { analyze: async (m, o) => (await lookupAll(m, o))[0], analyzeMulti: lookupAll };
 }
 
 describe('オジジの矢倉の駒組み', () => {
@@ -689,5 +691,38 @@ describe('各戦法の駒組み', () => {
     }
     expect(style.lessons.length).toBeGreaterThan(2);
     expect(style.winLine.length).toBeGreaterThan(0);
+  });
+});
+
+describe('判定の補助情報', () => {
+  it('最善と次善の差（gap）を振り返り用に返す', async () => {
+    const pos = Position.initial();
+    play(pos, '7g7f', '3c3d');
+    const ev = fakeEvaluator({
+      '7g7f 3c3d': [{ cp: 50, bestmove: '2g2f' }, { cp: -200, bestmove: '1g1f' }],
+      '7g7f 3c3d 2g2f': { cp: 40 },
+    });
+    const judge = new Judge(ev, { analyzeMs: 10 });
+    const j = await judge.judge(pos, usiToMove(pos, '2g2f'));
+    expect(j.analysis?.gap).toBe(250);
+  });
+
+  it('最善手が相手の狙いを消す手なら「△○○を防ぐ手」と言う', async () => {
+    // ▲７六歩 △８四歩 のあと、▲２六歩 が最善なのに ▲１六歩 と指した、という設定。
+    // 手番を渡すと △８五歩 で大損（偽エンジンの設定）で、▲２六歩 を指すと相手の応手が変わる → 「△８五歩を防ぐ手」
+    const pos = Position.initial();
+    play(pos, '7g7f', '8c8d');
+    const flipped = pos.clone();
+    flipped.turn = 1;
+    const ev = fakeEvaluator({
+      '7g7f 8c8d': [{ cp: 0, bestmove: '2g2f' }, { cp: -500, bestmove: '1g1f' }],
+      '7g7f 8c8d 1g1f': { cp: -800, pv: ['8d8e'] },
+      '7g7f 8c8d 2g2f': { cp: 0, pv: ['3c3d'] },
+      [`sfen:${flipped.toSfen()}`]: { cp: -900, bestmove: '8d8e' },
+    });
+    const judge = new Judge(ev, { analyzeMs: 10 });
+    const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
+    expect(j.verdict?.level).toBeGreaterThanOrEqual(4);
+    expect(j.verdict?.why).toContain('▲２六歩と△８五歩を防ぐ手じゃ');
   });
 });

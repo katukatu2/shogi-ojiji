@@ -28,6 +28,13 @@ describe('やねうら王 WASM', () => {
     expect(a.cp).toBeLessThan(-300);
   });
 
+  it('SFEN で局面を渡せる（手番を入れ替えた局面の読み）', async () => {
+    // ▲７六歩 △３四歩 のあと、７九の銀が無い（８八の角がタダ）局面を後手番で読む → 後手は角を取ってくる
+    const a = await engine.analyze([], { sfen: 'lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/1B5R1/LN1GKGSNL w - 3', movetime: 200 });
+    expect(a.bestmove).toBe('2b8h+');
+    expect(a.cp).toBeLessThan(-300); // 先手視点で大損
+  });
+
   it('後手番の局面でも先手視点の値になる', async () => {
     // 先手が角をタダで捨てた直後（後手番）。先手視点で大きくマイナス
     const a = await engine.analyze(['7g7f', '3c3d', '8h5e'], { movetime: 200 });

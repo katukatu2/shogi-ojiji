@@ -1396,6 +1396,11 @@ raizo-rig {
   background: rgba(31, 122, 58, 0.12);
 }
 
+.moment-head .tag.warn {
+  color: #8a5a00;
+  background: rgba(200, 140, 0, 0.14);
+}
+
 .big-board {
   width: min(100%, 340px);
   margin: 10px auto 8px;

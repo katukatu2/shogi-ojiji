@@ -25,7 +25,12 @@ export interface Verdict {
   better: Move | null; // 盤上でハイライトする正解の手
   evalLine?: string; // 「形勢 +120 → -350」のような一行
   ignoreKey?: string; // 「このまま進む」を選んだとき同じ叱責を繰り返さないためのキー
+  usedPurpose?: boolean; // 内部用: why が「最善手の狙い」の説明を含む（判定後に、相手の狙いを読んで言い換える）
 }
+
+// engineVerdict が why に埋める印。judge() が「最善手の狙い」の文に置き換える
+const PURPOSE_MARK = '{{purpose}}';
+const THREAT_DROP = 150; // 相手に手番を渡すとこれ以上損する（先手視点）なら「狙いがある」とみなす
 
 // 良い手への一言（無言の頷きに添える）
 export interface Praise {
@@ -35,8 +40,9 @@ export interface Praise {
 export interface Judgement {
   verdict: Verdict | null;
   praise: Praise | null;
-  // 振り返り用: 指す前と指した後の評価（先手視点）。エンジンが無いときは null
-  analysis?: { before: number; after: number; better: Move | null };
+  // 振り返り用: 指す前と指した後の評価（先手視点）。エンジンが無いときは null。
+  // gap は指す前の局面での最善手と次善手の評価の差（正の値。次善が読めなければ null）。「決め手」の判定に使う
+  analysis?: { before: number; after: number; better: Move | null; gap: number | null };
 }
 
 // 駒がタダで取られると判断する損失のしきい値（香車以上）。エンジンが無いときの簡易判定用
@@ -123,7 +129,7 @@ function clampCp(a: Analysis): number {
 export class Judge {
   private ignored = new Set<string>();
   private fired = new Set<string>(); // 一局に一度だけ反応するパターン
-  private cache = new Map<string, Promise<Analysis>>();
+  private cache = new Map<string, Promise<Analysis[]>>();
   private lastSurprise = -100; // 「ほう」と言った手数
 
   private analyzeMs: number;
@@ -162,16 +168,53 @@ export class Judge {
 
   // 局面の評価（キャッシュつき）。オジジの手選びにも使う
   evalOf(pos: Position): Promise<Analysis> {
+    return this.evalLines(pos).then((lines) => lines[0]);
+  }
+
+  // 最善と次善（MultiPV 2）。次善は「決め手」の判定に使う。読めなければ 1 本だけ
+  evalLines(pos: Position): Promise<Analysis[]> {
     if (!this.evaluator) return Promise.reject(new Error('no evaluator'));
     const key = pos.key();
     let p = this.cache.get(key);
     if (!p) {
       const moves = pos.moves.map(moveToUsi);
-      p = this.evaluator.analyze(moves, { movetime: this.analyzeMs });
+      p = this.evaluator.analyzeMulti(moves, { movetime: this.analyzeMs, multipv: 2 }).then((lines) => {
+        if (lines.length === 0) throw new Error('no analysis');
+        return lines;
+      });
       this.cache.set(key, p);
       if (this.cache.size > 64) this.cache.delete(this.cache.keys().next().value!);
     }
     return p;
+  }
+
+  // 相手に手番を渡したら何をされるか（先手番の局面を後手番として読む）。読めなければ null
+  private async threatOf(pos: Position): Promise<{ move: Move; analysis: Analysis } | null> {
+    if (!this.evaluator) return null;
+    const flipped = pos.clone();
+    flipped.turn = 1;
+    try {
+      const a = await this.evaluator.analyze([], { sfen: flipped.toSfen(), movetime: this.analyzeMs });
+      const move = a.bestmove ? safeMove(flipped, a.bestmove) : null;
+      return move ? { move, analysis: a } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // 最善手の狙いを言う。相手の狙い（手番を渡したときの最善）があり、最善手を指すとその狙いが消えるなら「○○を防ぐ手」。
+  // afterBest は最善手を指した後の読み（相手の応手 pv[0] が狙いと違えば、狙いは消えたとみなす）
+  private async purposeOf(pos: Position, best: Move, before: Analysis, afterBest: Analysis | null): Promise<string> {
+    if (moveNature(pos, best) !== 'attack') {
+      const threat = await this.threatOf(pos);
+      if (threat && clampCp(threat.analysis) <= clampCp(before) - THREAT_DROP) {
+        const reply = afterBest?.pv[0] ?? null;
+        if (reply !== moveToUsi(threat.move)) {
+          return `ここは${moveToKanji(best, 0)}と${moveToKanji(threat.move, 1)}を防ぐ手じゃ。`;
+        }
+      }
+    }
+    return describeBestPurpose(pos, best);
   }
 
   // pos は先手番の局面（手を指す前）。move は指そうとしている手。
@@ -234,8 +277,11 @@ export class Judge {
 
     let before: Analysis;
     let after: Analysis;
+    let second: Analysis | null = null;
     try {
-      before = await this.evalOf(pos);
+      const lines = await this.evalLines(pos);
+      before = lines[0];
+      second = lines[1] ?? null;
       pos.apply(move);
       try {
         after = await this.evalOf(pos);
@@ -271,12 +317,13 @@ export class Judge {
       before: before.cp,
       after: after.cp,
       better: before.bestmove && before.bestmove !== moveToUsi(move) ? safeMove(pos, before.bestmove) : null,
+      gap: second && second.mate === null && before.mate === null ? Math.max(0, clampCp(before) - clampCp(second)) : null,
     };
     let verdict = this.engineVerdict(pos, move, before, after);
+    let afterBest: Analysis | null = null;
     if (verdict && verdict.kind === 'eval' && verdict.better) {
       // 「正解を指した後」の局面も同じ条件で評価し、その値で判定をやり直す。
       // 表示する二つの数字と反応の強さが食い違わないようにするため
-      let afterBest: Analysis | null = null;
       pos.apply(verdict.better);
       try {
         afterBest = await this.evalOf(pos);
@@ -286,6 +333,12 @@ export class Judge {
         pos.undo();
       }
       if (afterBest) verdict = this.engineVerdict(pos, move, { ...before, cp: afterBest.cp, mate: afterBest.mate }, after);
+    }
+    if (verdict && verdict.usedPurpose && verdict.better) {
+      // 最善手の狙いを、相手の狙いを読んでから言う
+      verdict.why = verdict.why.replace(PURPOSE_MARK, await this.purposeOf(pos, verdict.better, before, afterBest));
+    } else if (verdict && verdict.why.includes(PURPOSE_MARK)) {
+      verdict.why = verdict.why.replace(PURPOSE_MARK, describeBestPurpose(pos, verdict.better));
     }
     if (verdict) {
       verdict.evalLine = await this.compareLine(pos, move, verdict.better, before, after);
@@ -387,7 +440,7 @@ ${playedLine}`;
     } else if (consequence) {
       why = `${consequence}形勢が${degree}悪くなる。${betterText}`;
     } else {
-      why = `${describeBestPurpose(pos, better)}形勢を${degree}損ねる手じゃ。`;
+      why = `${PURPOSE_MARK}形勢を${degree}損ねる手じゃ。`;
     }
     return {
       kind: 'eval',
@@ -396,6 +449,7 @@ ${playedLine}`;
       why,
       better,
       evalLine,
+      usedPurpose: why.includes(PURPOSE_MARK),
     };
   }
 
@@ -542,8 +596,10 @@ function describeBestPurpose(pos: Position, best: Move | null): string {
   }
   if (nature === 'attack') return `ここは${text}と攻める手じゃ。`;
   if (nature === 'defend') {
-    const nearSente = sk ? Math.max(Math.abs(best.to.x - sk.x), Math.abs(best.to.y - sk.y)) <= 2 : false;
-    return nearSente ? `ここは${text}と玉の守りを固める手じゃ。` : `ここは${text}と受ける手じゃ。`;
+    // 「守りを固める」と言えるのは玉に接する駒だけ。離れた自陣の手は「隙を消す」
+    const adjacent = sk ? Math.max(Math.abs(best.to.x - sk.x), Math.abs(best.to.y - sk.y)) <= 1 : false;
+    if (adjacent) return `ここは${text}と玉の守りを固める手じゃ。`;
+    return best.to.y >= 6 ? `ここは${text}と自陣の隙を消す手じゃ。` : `ここは${text}と受ける手じゃ。`;
   }
   // 初期位置から動かしていない駒を働かせる
   const home = best.from.y >= 6;

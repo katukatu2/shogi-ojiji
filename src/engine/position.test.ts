@@ -96,3 +96,18 @@ describe('notation', () => {
     expect(moveToKanji(m2, 1)).toBe('△８四歩');
   });
 });
+
+describe('SFEN', () => {
+  it('初期局面と、駒を取った後の持ち駒・手番を書き出せる', () => {
+    const pos = Position.initial();
+    expect(pos.toSfen()).toBe('lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1');
+    play(pos, '7g7f');
+    expect(pos.toSfen()).toBe('lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2');
+    play(pos, '3c3d', '8h2b+');
+    expect(pos.toSfen()).toBe('lnsgkgsnl/1r5+B1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/7R1/LNSGKGSNL w B 4');
+    // 手番を入れ替えた局面も書ける
+    const flipped = pos.clone();
+    flipped.turn = 0;
+    expect(flipped.toSfen().split(' ')[1]).toBe('b');
+  });
+});

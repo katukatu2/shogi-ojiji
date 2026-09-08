@@ -30,6 +30,12 @@ interface Undo {
   captured: Piece | null;
 }
 
+const SFEN_LETTER: Record<PieceType, string> = {
+  FU: 'P', KY: 'L', KE: 'N', GI: 'S', KI: 'G', KA: 'B', HI: 'R', OU: 'K',
+  TO: '+P', NY: '+L', NK: '+N', NG: '+S', UM: '+B', RY: '+R',
+};
+const SFEN_HAND_ORDER: HandPiece[] = ['HI', 'KA', 'KI', 'GI', 'KE', 'KY', 'FU'];
+
 export class Position {
   board: (Piece | null)[] = new Array(81).fill(null);
   hands: [Hand, Hand] = [emptyHand(), emptyHand()];
@@ -64,6 +70,40 @@ export class Position {
 
   get(x: number, y: number): Piece | null {
     return this.board[y * 9 + x];
+  }
+
+  // USI の SFEN 文字列。手番を入れ替えた局面（相手に手番を渡したら何をされるか）をエンジンに渡すときに使う
+  toSfen(): string {
+    const rows: string[] = [];
+    for (let y = 0; y < 9; y++) {
+      let row = '';
+      let empty = 0;
+      for (let x = 0; x < 9; x++) {
+        const p = this.board[y * 9 + x];
+        if (!p) {
+          empty++;
+          continue;
+        }
+        if (empty > 0) {
+          row += String(empty);
+          empty = 0;
+        }
+        const letter = SFEN_LETTER[p.type];
+        row += p.color === 0 ? letter : letter.toLowerCase();
+      }
+      if (empty > 0) row += String(empty);
+      rows.push(row);
+    }
+    let hands = '';
+    for (const color of [0, 1] as Color[]) {
+      for (const hp of SFEN_HAND_ORDER) {
+        const n = this.hands[color][hp];
+        if (n <= 0) continue;
+        const letter = SFEN_LETTER[hp];
+        hands += (n > 1 ? String(n) : '') + (color === 0 ? letter : letter.toLowerCase());
+      }
+    }
+    return `${rows.join('/')} ${this.turn === 0 ? 'b' : 'w'} ${hands || '-'} ${this.moves.length + 1}`;
   }
 
   set(x: number, y: number, piece: Piece | null): void {

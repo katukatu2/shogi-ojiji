@@ -11,7 +11,7 @@ import { choosePlanMove, planApplies, planKey, PlanState } from './style/plan';
 import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
 import { LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion } from './game/progress';
-import { keyMoments, momentCaption, MoveLog, KeyMoment, winProb } from './game/review';
+import { keyMoments, momentCaption, momentLabel, MoveLog, KeyMoment, winProb } from './game/review';
 import { miniBoard, positionAfter } from './ui/miniboard';
 import { playThunder, playPiece, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug, pieceElementForDebug } from './ui/audio';
 
@@ -703,6 +703,7 @@ async function tryMove(m: Move): Promise<void> {
     kanji: moveToKanji(m, 0),
     before: judgement.analysis ? judgement.analysis.before : null,
     after: judgement.analysis ? judgement.analysis.after : null,
+    gap: judgement.analysis ? judgement.analysis.gap : null,
     level: verdict ? verdict.level : 1,
     headline: verdict ? verdict.headline : '',
     why: verdict ? verdict.why : '',
@@ -1067,21 +1068,23 @@ function showResult(result: Result): void {
     panel.append(el('div', 'promotion', `昇級じゃ。次から「${lastOutcome.promotion.to.name}」のオジジと指せ。`));
   }
 
-  // 振り返り: 形勢が最も動いた 3 手
-  const moments = keyMoments(game.logs, 3);
+  // 振り返り: 形勢が最も動いた 3 手（勝った対局は決め手 1 つと、ヒヤリとした手を最大 2 つ）
+  const reviewOpts = { won: result === 'win' };
+  const moments = keyMoments(game.logs, 3, reviewOpts);
   if (moments.length > 0) {
     const h3 = el('h3', '', '今日の 3 手');
     h3.append(el('small', '', 'タップで拡大'));
     panel.append(h3);
     const row = el('div', 'moments');
     moments.forEach((mo, i) => {
-      const card = el('button', 'moment' + (mo.kind === 'good' ? ' good' : ''));
+      const card = el('button', 'moment' + (mo.kind === 'good' || mo.kind === 'decisive' ? ' good' : ''));
       const pos = positionAfter(mo.log.movesBefore);
       const played = safeMove(pos, mo.log.usi);
       card.append(miniBoard(pos, played));
-      card.append(el('div', 'moment-move', `${mo.log.ply}手目 ${mo.log.kanji}${mo.kind === 'good' ? '（好手）' : ''}`));
-      card.append(el('div', 'moment-text', momentCaption(mo)));
-      card.addEventListener('click', () => showMoment(moments, i));
+      const suffix = mo.kind === 'blunder' ? '' : `（${momentLabel(mo, reviewOpts)}）`;
+      card.append(el('div', 'moment-move', `${mo.log.ply}手目 ${mo.log.kanji}${suffix}`));
+      card.append(el('div', 'moment-text', momentCaption(mo, reviewOpts)));
+      card.addEventListener('click', () => showMoment(moments, i, false, reviewOpts));
       row.append(card);
     });
     panel.append(row);
@@ -1102,7 +1105,7 @@ function showResult(result: Result): void {
 }
 
 // 「今日の 3 手」の拡大表示。大きな盤で、指す前（正解を緑で）と指した後を切り替えて見られる。前後の手にも移れる
-function showMoment(moments: KeyMoment[], index: number, after = false): void {
+function showMoment(moments: KeyMoment[], index: number, after = false, opts: { won?: boolean } = {}): void {
   const mo = moments[index];
   if (!mo) return;
   const log = mo.log;
@@ -1110,7 +1113,7 @@ function showMoment(moments: KeyMoment[], index: number, after = false): void {
   const panel = el('div', 'panel');
   const head = el('div', 'moment-head');
   head.append(el('b', '', `${log.ply}手目 ${log.kanji}`));
-  head.append(el('span', 'tag' + (mo.kind === 'good' ? ' good' : ''), mo.kind === 'good' ? '好手' : '形勢を落とした手'));
+  head.append(el('span', 'tag' + (mo.kind === 'blunder' ? (opts.won ? ' warn' : '') : ' good'), momentLabel(mo, opts)));
   panel.append(head);
 
   const before = positionAfter(log.movesBefore);
@@ -1128,8 +1131,8 @@ function showMoment(moments: KeyMoment[], index: number, after = false): void {
   const toggle = el('div', 'seg');
   const b1 = el('button', 'seg-btn' + (after ? '' : ' on'), '指す前');
   const b2 = el('button', 'seg-btn' + (after ? ' on' : ''), '指した後');
-  b1.addEventListener('click', () => showMoment(moments, index, false));
-  b2.addEventListener('click', () => showMoment(moments, index, true));
+  b1.addEventListener('click', () => showMoment(moments, index, false, opts));
+  b2.addEventListener('click', () => showMoment(moments, index, true, opts));
   toggle.append(b1, b2);
   panel.append(toggle);
 
@@ -1140,7 +1143,7 @@ function showMoment(moments: KeyMoment[], index: number, after = false): void {
   };
   const pct = (v: number | null): string => (v === null ? '?' : `${Math.round(winProb(v))}%`);
   panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}　勝率 ${pct(log.before)} → ${pct(log.after)}`));
-  panel.append(el('p', 'moment-why', momentCaption(mo)));
+  panel.append(el('p', 'moment-why', momentCaption(mo, opts)));
   if (mo.kind === 'blunder' && log.betterKanji) {
     panel.append(el('div', 'moment-better', `正解: ${log.betterKanji}${better ? '（指す前の盤に緑で表示）' : ''}`));
   }
@@ -1150,8 +1153,8 @@ function showMoment(moments: KeyMoment[], index: number, after = false): void {
   const next = el('button', 'btn', '次の手 ›');
   prev.disabled = index === 0;
   next.disabled = index === moments.length - 1;
-  prev.addEventListener('click', () => showMoment(moments, index - 1));
-  next.addEventListener('click', () => showMoment(moments, index + 1));
+  prev.addEventListener('click', () => showMoment(moments, index - 1, false, opts));
+  next.addEventListener('click', () => showMoment(moments, index + 1, false, opts));
   nav.append(prev, next);
   panel.append(nav);
   const close = el('button', 'btn primary close', '閉じる');

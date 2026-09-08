@@ -16,6 +16,7 @@ export interface Evaluator {
 }
 
 export interface AnalyzeOptions {
+  sfen?: string; // 指定すると moves ではなくこの局面（SFEN）を読む。手番を入れ替えた局面の読みに使う
   movetime?: number; // ミリ秒
   depth?: number;
   multipv?: number;
@@ -104,9 +105,10 @@ export class Engine implements Evaluator {
       const mod = this.mod;
       if (!mod) throw new Error('engine not initialized');
       const multipv = opts.multipv ?? 1;
-      const sideToMove = moves.length % 2 === 0 ? 0 : 1; // 0 = 先手番
+      // 0 = 先手番。SFEN なら手番の欄（b / w）で決める
+      const sideToMove = opts.sfen ? (opts.sfen.split(' ')[1] === 'w' ? 1 : 0) : moves.length % 2 === 0 ? 0 : 1;
       mod.postMessage(`setoption name MultiPV value ${multipv}`);
-      mod.postMessage(`position startpos${moves.length ? ' moves ' + moves.join(' ') : ''}`);
+      mod.postMessage(opts.sfen ? `position sfen ${opts.sfen}` : `position startpos${moves.length ? ' moves ' + moves.join(' ') : ''}`);
       const go = opts.depth ? `go depth ${opts.depth}` : `go movetime ${opts.movetime ?? 400}`;
       const lines = await this.send(go, (l) => l.startsWith('bestmove'));
       const best = lines.find((l) => l.startsWith('bestmove'))!.split(' ')[1] ?? null;
