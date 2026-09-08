@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="将棋オジジ">
+  <rect width="256" height="256" rx="56" fill="#2b3a55"/>
+  <g transform="translate(8 6)">
+    <!-- 羽織と着物 -->
+    <path d="M14 260 L32 196 Q120 172 208 196 L226 260 Z" fill="#efe6d2" stroke="#cbbfa6" stroke-width="2"/>
+    <path d="M80 260 L92 194 L120 216 L148 194 L160 260 Z" fill="#a4472f"/>
+    <path d="M92 194 L120 216 L148 194 L141 191 L120 207 L99 191 Z" fill="#fff"/>
+    <circle cx="50" cy="226" r="9" fill="#5a5a5a"/><circle cx="50" cy="226" r="4" fill="#efe6d2"/>
+    <circle cx="190" cy="226" r="9" fill="#5a5a5a"/><circle cx="190" cy="226" r="4" fill="#efe6d2"/>
+    <!-- 首 -->
+    <rect x="103" y="172" width="34" height="30" fill="#d9a072"/>
+    <!-- 横の白髪 -->
+    <polygon points="14,112 34,58 66,94 34,146" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="2"/>
+    <polygon points="226,112 206,58 174,94 206,146" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="2"/>
+    <!-- 耳 -->
+    <ellipse cx="38" cy="126" rx="10" ry="15" fill="#d9a072"/>
+    <ellipse cx="202" cy="126" rx="10" ry="15" fill="#d9a072"/>
+    <!-- 顔 -->
+    <ellipse cx="120" cy="120" rx="84" ry="80" fill="#f2c9a3" stroke="#d9a072" stroke-width="2"/>
+    <polygon points="86,44 102,58 110,20 124,54 140,22 150,58 166,42 156,70 88,70" fill="#f7f7f7" stroke="#c4c4c4" stroke-width="2"/>
+    <path d="M88 78 Q120 70 152 78" stroke="#d9a072" stroke-width="2" fill="none"/>
+    <path d="M94 90 Q120 82 146 90" stroke="#d9a072" stroke-width="2" fill="none"/>
+    <ellipse cx="70" cy="148" rx="15" ry="8" fill="#e8806a" opacity="0.45"/>
+    <ellipse cx="170" cy="148" rx="15" ry="8" fill="#e8806a" opacity="0.45"/>
+    <!-- 眉 -->
+    <polygon points="60,94 106,102 104,116 58,108" fill="#3a2a22"/>
+    <polygon points="180,94 134,102 136,116 182,108" fill="#3a2a22"/>
+    <!-- 目 -->
+    <ellipse cx="86" cy="124" rx="14" ry="6" fill="#fff" stroke="#3a2a22" stroke-width="2"/>
+    <circle cx="86" cy="125" r="4" fill="#3a2a22"/>
+    <path d="M72 120 Q86 114 100 120" stroke="#3a2a22" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <ellipse cx="154" cy="124" rx="14" ry="6" fill="#fff" stroke="#3a2a22" stroke-width="2"/>
+    <circle cx="154" cy="125" r="4" fill="#3a2a22"/>
+    <path d="M140 120 Q154 114 168 120" stroke="#3a2a22" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <!-- 鼻・口 -->
+    <ellipse cx="120" cy="142" rx="13" ry="10" fill="#d9a072" opacity="0.9"/>
+    <path d="M100 170 Q120 163 140 170" stroke="#3a2a22" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

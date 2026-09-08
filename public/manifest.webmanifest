@@ -1,0 +1,16 @@
+{
+  "name": "将棋オジジの定石指南（仮）",
+  "short_name": "将棋オジジ",
+  "description": "オジジは得意戦法で囲ってくる。やってはいけない手を指すと叱られる、学ぶための将棋。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#efe6d2",
+  "theme_color": "#2b3a55",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      # 台詞の点検: 各戦法 2 局ずつ自動対局してエラーが出ないことだけ確かめる
+      - run: |
+          for s in yagura shikenbisha kakugawari bougin nakabisha; do
+            npx vite-node scripts/selfplay.ts -- --style $s --games 2 --plies 60 --out logs/ci-$s.jsonl
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
