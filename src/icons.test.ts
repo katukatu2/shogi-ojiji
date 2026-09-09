@@ -43,7 +43,7 @@ describe('アイコン生成（scripts/build-icons.mjs）', () => {
     expect(ctx.fill).toBe('#2b3a55');
     expect(ctx.corner).toBeCloseTo(56 / 256, 6);
     expect(ctx.webBackdrop).toBe('#efe6d2'); // manifest の background_color
-    expect(ctx.androidBackdrop.toLowerCase()).toBe('#ffffff'); // values/ic_launcher_background.xml
+    expect(ctx.androidBackdrop.toLowerCase()).toBe('#efe6d2'); // values/ic_launcher_background.xml（Web と同じ生成り色）
     expect(ctx.inner).toContain('<g transform=');
   });
 
