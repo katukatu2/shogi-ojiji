@@ -3,17 +3,23 @@ import { Move, HandPiece, HAND_ORDER, PIECE_KANJI, PIECE_NAME, PIECE_VALUE, Sq, 
 import { moveToKanji, moveToUsi, sqToKanji } from './engine/notation';
 import { chooseMove } from './ai/search';
 import { Engine, engineSupported, browserEngineFactory, Analysis } from './ai/engine';
-import { Judge, Verdict, Praise, Judgement, safeMove, bestCaptureGain } from './style/judge';
+import { Judge, Verdict, Praise, Judgement, safeMove, bestCaptureGain, SHALLOW_DEPTH } from './style/judge';
 import { Style, PlanVariant } from './style/types';
 import { STYLES as ALL_STYLES, findStyle } from './style/index';
 import { formationOf } from './game/formation';
 import { choosePlanMove, planApplies, planKey, PlanState } from './style/plan';
 import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
-import { LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion } from './game/progress';
+import {
+  LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion, GameResult,
+  titleOf, totals, badgesOf, BADGE_IDS, BADGE_LABEL, BADGE_CONDITION,
+} from './game/progress';
 import { keyMoments, momentCaption, momentLabel, MoveLog, KeyMoment, winProb } from './game/review';
 import { miniBoard, positionAfter } from './ui/miniboard';
 import { playThunder, playPiece, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug, pieceElementForDebug } from './ui/audio';
+
+// ソースコードの公開先。決まったら URL に差し替える（URL らしい文字列ならクレジット欄でリンクになる）
+const SOURCE_URL = '（公開先 URL）';
 
 const STYLES: { style: Style | null; name: string; desc: string }[] = ALL_STYLES.map((s) => ({
   style: s,
@@ -26,7 +32,8 @@ const FILE_LABELS = ['９', '８', '７', '６', '５', '４', '３', '２', '�
 const RANK_LABELS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
 
 
-type Result = 'win' | 'lose' | 'resign';
+// 対局の結果。'draw' は千日手・持将棋・手数上限の引き分け
+type Result = GameResult;
 
 interface Game {
   style: Style;
@@ -42,6 +49,8 @@ interface Game {
   lastWhisper: number; // 最後に狙いをつぶやいた手数
   lastCheckMutter: number; // 最後に「王手じゃ」と言った手数
   lastMove: Move | null;
+  lastMoveKanji: string; // 最終手の表記。指す前の局面で作る（「打」は同種の駒が動けるときだけ付くので、指した後では決められない）
+  lastCaptureSq: Sq | null; // 直前のオジジの手が駒を取った地点（取っていなければ null）。プレイヤーの「取り返し」の記録に使う
   result: Result | null;
   busy: boolean; // オジジの思考中・演出中
   level: Level; // 難易度（オジジの強さ）
@@ -114,7 +123,8 @@ function ensureEngine(): void {
     });
 }
 
-// エンジンが使えない環境では、その旨を一度だけ知らせる（判定は簡易版に切り替わる）
+// エンジンが使えない環境では、その旨を一度だけ画面の上に知らせる（判定は簡易版に切り替わる）。
+// 対局画面の操作ボタンに重ならない位置（style.css の .engine-notice）
 let engineNoticeShown = false;
 function showEngineNotice(): void {
   if (engineNoticeShown) return;
@@ -231,6 +241,10 @@ function showTitle(): void {
   }
   s.append(actions);
 
+  // 称号と通算。皆伝（戦法ごとに 1 つ）の数で称号が上がる
+  const t = totals(progress);
+  s.append(el('div', 'rank', `称号: ${titleOf(progress)}　${t.wins}勝 ${t.games}局・皆伝 ${t.kaiden}/${ALL_STYLES.length}`));
+
   // 遊び方（折りたたみ。初回に一度読むもの）
   const how = el('details', 'howto');
   how.append(el('summary', '', '遊び方'));
@@ -253,6 +267,24 @@ function showTitle(): void {
   link.setAttribute('target', '_blank');
   link.setAttribute('rel', 'noopener');
   credit.append(link);
+  // ライセンスとソースの公開先、プライバシーポリシー（public/privacy.html）
+  credit.append(el('br'));
+  credit.append(document.createTextNode('このアプリは GPLv3 で公開しています。'));
+  credit.append(el('br'));
+  credit.append(document.createTextNode('ソースコード（'));
+  if (/^https?:\/\//.test(SOURCE_URL)) {
+    const src = el('a', '', SOURCE_URL);
+    src.setAttribute('href', SOURCE_URL);
+    src.setAttribute('target', '_blank');
+    src.setAttribute('rel', 'noopener');
+    credit.append(src);
+  } else {
+    credit.append(document.createTextNode(SOURCE_URL)); // 公開先が決まるまでは文字のまま
+  }
+  credit.append(document.createTextNode('）／ '));
+  const privacy = el('a', '', 'プライバシーポリシー');
+  privacy.setAttribute('href', './privacy.html');
+  credit.append(privacy);
   s.append(credit);
 
   app.append(s);
@@ -316,7 +348,10 @@ function showSettings(): void {
     const recText = rec && rec.games > 0
       ? `<em>${rec.wins}勝 ${rec.games}局</em>${rec.scolded > 0 ? `<em>ばかもん ${rec.scolded}回</em>` : `<em>課題 ${taskCount}</em>`}`
       : '<em>未対局</em>';
-    b.innerHTML = `<span class="jn"><b>${j.name}</b><span class="jd">${j.desc}</span></span><span class="jr">${recText}</span>`;
+    // 取った免状（初勝利・叱られず勝利・皆伝）は小さな札で並べる。無ければ何も出さない
+    const badges = badgesOf(progress, style.id);
+    const badgeText = badges.length > 0 ? `<span class="badges">${badges.map((id) => `<em class="badge">${BADGE_LABEL[id]}</em>`).join('')}</span>` : '';
+    b.innerHTML = `<span class="jn"><b>${j.name}</b><span class="jd">${j.desc}</span></span><span class="jr">${recText}${badgeText}</span>`;
     b.addEventListener('click', () => {
       pendingStyleId = style.id;
       for (const [id, r] of rows) r.classList.toggle('on', id === style.id);
@@ -341,6 +376,10 @@ function showSettings(): void {
     const rec = progress.styles[style.id];
     text.append(el('div', 'pline', rec && rec.games > 0 ? `成績: ${rec.wins}勝 ${rec.games}局・ばかもん ${rec.scolded}回` : '成績: まだ指していない'));
     text.append(el('div', 'pline', `次の課題: ${pickTask(style, done).text}`));
+    // 次に取れる免状の条件（全部取っていれば出さない）
+    const have = badgesOf(progress, style.id);
+    const nextBadge = BADGE_IDS.find((id) => !have.includes(id));
+    if (nextBadge) text.append(el('div', 'pline', `次の免状: ${BADGE_CONDITION[nextBadge]}`));
     preview.append(text);
   };
   s.append(preview);
@@ -390,6 +429,8 @@ function startGame(style: Style): void {
     lastWhisper: -100,
     lastCheckMutter: -100,
     lastMove: null,
+    lastMoveKanji: '',
+    lastCaptureSq: null,
     result: null,
     busy: false,
     level: levelById(progress.level),
@@ -427,7 +468,7 @@ let scoldEl: HTMLElement;
 let moveNoEl: HTMLElement;
 let engineEl: HTMLElement | null = null;
 let stageFaceEl: HTMLElement | null = null;
-let lastOutcome: { taskDone: boolean; promotion: Promotion | null } = { taskDone: false, promotion: null };
+let lastOutcome: { taskDone: boolean; promotion: Promotion | null; newBadges: string[] } = { taskDone: false, promotion: null, newBadges: [] };
 let toastSerial = 0;
 let cutinEl: HTMLElement;
 let nodEl: HTMLElement;
@@ -607,13 +648,11 @@ function render(): void {
   moveNoEl.textContent = `${pos.moves.length + 1}手目`;
   scoldEl.textContent = `叱られ ${game.scolded}回`;
 
+  // 最終手の表記は指す前の局面で作ってある（game.lastMoveKanji）
   if (game.busy && !game.result && cutinEl.hidden) {
-    const prev = pos.moves.length >= 2 ? pos.moves[pos.moves.length - 2] : null;
-    lastMoveEl.textContent = game.lastMove ? `${moveToKanji(game.lastMove, (1 - pos.turn) as Color, prev)}　…` : '…';
+    lastMoveEl.textContent = game.lastMove ? `${game.lastMoveKanji}　…` : '…';
   } else if (game.lastMove) {
-    const prev = pos.moves.length >= 2 ? pos.moves[pos.moves.length - 2] : null;
-    const color = (1 - pos.turn) as Color;
-    lastMoveEl.textContent = moveToKanji(game.lastMove, color, prev);
+    lastMoveEl.textContent = game.lastMoveKanji;
     if (inCheck) lastMoveEl.append(el('span', 'check', '王手！'));
   } else {
     lastMoveEl.textContent = '先手番（あなた）';
@@ -687,6 +726,12 @@ async function tryMove(m: Move): Promise<void> {
   if (!g || g.busy) return;
   g.busy = true;
   render();
+  // 振り返り用に、指す前の盤の様子を控えておく（駒を取る手か、取り返しか、王手を受けていたか、合法手の数）
+  const prevMove = g.pos.moves.length > 0 ? g.pos.moves[g.pos.moves.length - 1] : null;
+  const capture = g.pos.get(m.to.x, m.to.y)?.color === 1;
+  const recapture = prevMove !== null && sqEq(prevMove.to, m.to) && g.lastCaptureSq !== null && sqEq(g.lastCaptureSq, m.to);
+  const inCheck = g.pos.inCheck(0);
+  const legalCount = g.pos.legalMoves().length;
   let judgement: Judgement;
   try {
     judgement = await g.judge.judge(g.pos, m);
@@ -696,19 +741,26 @@ async function tryMove(m: Move): Promise<void> {
   }
   if (game !== g) return; // 判定中にタイトルへ戻った
   const { verdict, praise } = judgement;
+  // 表記は指す前の局面（g.pos）で作る。正解の手も同じ局面の手
+  const better = verdict?.better ?? judgement.analysis?.better ?? null;
   g.logs.push({
     ply: g.pos.moves.length + 1,
     movesBefore: g.pos.moves.map(moveToUsi),
     usi: moveToUsi(m),
-    kanji: moveToKanji(m, 0),
+    kanji: moveToKanji(m, 0, null, g.pos),
     before: judgement.analysis ? judgement.analysis.before : null,
     after: judgement.analysis ? judgement.analysis.after : null,
     gap: judgement.analysis ? judgement.analysis.gap : null,
+    capture,
+    recapture,
+    inCheck,
+    legalCount,
+    depth: judgement.analysis ? judgement.analysis.depth : null,
     level: verdict ? verdict.level : 1,
     headline: verdict ? verdict.headline : '',
     why: verdict ? verdict.why : '',
-    betterKanji: verdict?.better ? moveToKanji(verdict.better, 0) : judgement.analysis?.better ? moveToKanji(judgement.analysis.better, 0) : '',
-    betterUsi: verdict?.better ? moveToUsi(verdict.better) : judgement.analysis?.better ? moveToUsi(judgement.analysis.better) : '',
+    betterKanji: better ? moveToKanji(better, 0, null, g.pos) : '',
+    betterUsi: better ? moveToUsi(better) : '',
     praise: praise ? praise.comment : '',
   });
   if (verdict && verdict.level <= 3) {
@@ -744,10 +796,30 @@ async function tryMove(m: Move): Promise<void> {
   commit(m, praise);
 }
 
+// 指す前の局面で手の表記を作る。「同」は直前の手から、「打」は同種の盤上の駒が動けるかで決まる
+function kanjiBefore(pos: Position, m: Move, color: Color): string {
+  const prev = pos.moves.length > 0 ? pos.moves[pos.moves.length - 1] : null;
+  return moveToKanji(m, color, prev, pos);
+}
+
+// 千日手・持将棋・手数上限による終局。成立していなければ null。sente（先手）はプレイヤー
+function ruleEnding(pos: Position): { result: Result; reason: string } | null {
+  const rep = pos.repetition();
+  if (rep !== 'none') {
+    if (rep === 'draw') return { result: 'draw', reason: '千日手' };
+    return { result: rep === 'sente-loses' ? 'lose' : 'win', reason: '連続王手の千日手' };
+  }
+  const ek = pos.enteringKing();
+  if (ek !== 'none') return { result: ek === 'draw' ? 'draw' : ek === 'sente-loses' ? 'lose' : 'win', reason: '持将棋' };
+  if (pos.isTooLong()) return { result: 'draw', reason: `${Position.MAX_PLIES} 手` };
+  return null;
+}
+
 function commit(m: Move, praise: Praise | null, line?: () => void): void {
   if (!game) return;
   turnId++;
   const captured = game.pos.get(m.to.x, m.to.y);
+  game.lastMoveKanji = kanjiBefore(game.pos, m, 0);
   game.pos.apply(m);
   playPiece();
   game.lastMove = m;
@@ -764,6 +836,11 @@ function commit(m: Move, praise: Praise | null, line?: () => void): void {
   render();
   if (game.pos.isGameOver()) {
     endGame('win');
+    return;
+  }
+  const ending = ruleEnding(game.pos);
+  if (ending) {
+    endGame(ending.result, ending.reason);
     return;
   }
   game.busy = true;
@@ -800,12 +877,19 @@ async function npcMove(): Promise<void> {
     endGame('win');
     return;
   }
+  g.lastMoveKanji = kanjiBefore(pos, m, 1);
+  g.lastCaptureSq = pos.get(m.to.x, m.to.y) ? { ...m.to } : null;
   pos.apply(m);
   playPiece();
   g.lastMove = m;
   render();
   if (pos.isGameOver()) {
     endGame('lose');
+    return;
+  }
+  const ending = ruleEnding(pos);
+  if (ending) {
+    endGame(ending.result, ending.reason);
     return;
   }
   ojijiMutters(g, m);
@@ -862,6 +946,18 @@ function takeBack(): void {
   g.matta++;
   turnId++;
   g.lastMove = g.pos.moves.length > 0 ? g.pos.moves[g.pos.moves.length - 1] : null;
+  // 戻った局面の最終手（オジジの手）の表記と「駒を取った地点」は、その手を指す前の局面が要るので、
+  // もう一手戻して作り、指し直す（Position の千日手の記録は undo で切り詰められ、次の判定で埋め直される）
+  if (g.lastMove) {
+    const m = g.lastMove;
+    g.pos.undo();
+    g.lastMoveKanji = kanjiBefore(g.pos, m, 1);
+    g.lastCaptureSq = g.pos.get(m.to.x, m.to.y) ? { ...m.to } : null;
+    g.pos.apply(m);
+  } else {
+    g.lastMoveKanji = '';
+    g.lastCaptureSq = null;
+  }
   selectedSq = null;
   selectedHand = null;
   hintMove = null;
@@ -886,7 +982,7 @@ async function showHint(): Promise<void> {
     g.hints++;
     hintMove = m;
     render();
-    showToast('thinking', 'ヒント', `ワシなら${moveToKanji(m, 0)}じゃ。理由は自分で考えよ。`, 5000, 'ui');
+    showToast('thinking', 'ヒント', `ワシなら${moveToKanji(m, 0, null, g.pos)}じゃ。理由は自分で考えよ。`, 5000, 'ui');
   } catch (err) {
     console.warn('hint failed', err);
   }
@@ -914,7 +1010,8 @@ function showCutin(v: Verdict): Promise<boolean> {
     if (v.headline !== 'ばかもーん！' && v.headline !== 'それは悪手じゃろう') panel.append(el('div', 'headline', v.headline));
     panel.append(el('p', 'why', v.why));
     if (v.evalLine) panel.append(el('div', 'evalline', v.evalLine));
-    if (v.better) panel.append(el('div', 'better', `正解: ${moveToKanji(v.better, 0)}（盤面に緑で表示）`));
+    // カットイン中は手がまだ指されていないので、game.pos は指す前の局面
+    if (v.better) panel.append(el('div', 'better', `正解: ${moveToKanji(v.better, 0, null, game?.pos)}（盤面に緑で表示）`));
     const row = el('div', 'btn-row');
     const redo = el('button', 'btn primary', '指し直す');
     const go = el('button', 'btn', 'このまま進む');
@@ -991,7 +1088,15 @@ function showNod(p: Praise): void {
   showToast('nod', '', p.comment, 4500);
 }
 
-function endGame(result: Result): void {
+// 千日手・持将棋・手数上限の終局で、帯に添える説明（reason → 説明）
+const RULE_ENDING_NOTE: Record<string, string> = {
+  '千日手': '同じ局面が 4 回現れた',
+  '連続王手の千日手': '王手を続けた側の負け',
+  '持将棋': '両方の玉が入玉した',
+};
+
+// 対局を終える。reason があるときは詰みではなく、千日手・持将棋・手数上限による終局
+function endGame(result: Result, reason?: string): void {
   if (!game) return;
   stopSfx();
   game.result = result;
@@ -1007,9 +1112,11 @@ function endGame(result: Result): void {
     result,
     plies: game.pos.moves.length,
   });
-  const { promotion } = recordGame(progress, { styleId: game.style.id, result, scolded: game.scolded, task: game.task, taskDone });
+  const { promotion, newBadges } = recordGame(progress, {
+    styleId: game.style.id, result, scolded: game.scolded, task: game.task, taskDone, level: game.level.id,
+  });
   saveProgress(progress);
-  lastOutcome = { taskDone, promotion };
+  lastOutcome = { taskDone, promotion, newBadges };
   hintMove = null;
   selectedSq = null;
   selectedHand = null;
@@ -1018,15 +1125,21 @@ function endGame(result: Result): void {
     showResult(result);
     return;
   }
-  // 詰みの局面はまず盤面で見せる。オジジの一言はボタンを押してから
+  // 終局の局面はまず盤面で見せる。オジジの一言はボタンを押してから
   const g = game;
-  const last = g.lastMove ? moveToKanji(g.lastMove, result === 'lose' ? 1 : 0) : '';
+  const last = g.lastMoveKanji; // 指す前の局面で作った表記（詰みでも千日手でも最終手は先手・後手どちらもあり得る）
   const n = g.pos.moves.length;
+  const outcome = result === 'draw' ? '引き分け' : result === 'lose' ? '後手（オジジ）の勝ち' : 'あなたの勝ち';
   const banner = el('div', 'mate-banner');
-  banner.append(el('div', 'mate-word', '詰み'));
-  banner.append(el('div', 'mate-sub', result === 'lose'
-    ? `${last}まで、${n}手で後手（オジジ）の勝ち`
-    : `${last}まで、${n}手であなたの勝ち`));
+  if (reason) {
+    // 「千日手。同じ局面が 4 回現れた」「400 手に達した。引き分け」のように、規則による終局を言う
+    banner.append(el('div', 'mate-word' + (reason.length > 4 ? ' long' : ''), reason));
+    const note = RULE_ENDING_NOTE[reason];
+    banner.append(el('div', 'mate-sub', note ? `${note}。${n}手で${outcome}` : `${reason}に達した。${outcome}`));
+  } else {
+    banner.append(el('div', 'mate-word', '詰み'));
+    banner.append(el('div', 'mate-sub', `${last}まで、${n}手で${outcome}`));
+  }
   const btn = el('button', 'btn primary', 'オジジの一言を聞く');
   btn.addEventListener('click', () => {
     if (game !== g) return;
@@ -1035,7 +1148,7 @@ function endGame(result: Result): void {
   });
   banner.append(btn);
   boardEl.parentElement!.parentElement!.append(banner); // 盤の下（board-wrap 内）
-  lastMoveEl.textContent = `${last}　詰み`;
+  lastMoveEl.textContent = `${last}　${reason ?? '詰み'}`;
 }
 
 function showResult(result: Result): void {
@@ -1046,6 +1159,7 @@ function showResult(result: Result): void {
     win: game.style.winLine,
     lose: game.style.loseLine,
     resign: '投了か。潔いのは悪くない。',
+    draw: '引き分けか。仕切り直しじゃ。',
   };
   const face = el('div', 'face');
   faceInto(face, result === 'win' ? 'shocked' : 'normal');
@@ -1066,6 +1180,12 @@ function showResult(result: Result): void {
   panel.append(task);
   if (lastOutcome.promotion) {
     panel.append(el('div', 'promotion', `昇級じゃ。次から「${lastOutcome.promotion.to.name}」のオジジと指せ。`));
+  }
+  // この一局で取った免状。皆伝なら称号も変わるので添える
+  for (const b of lastOutcome.newBadges) {
+    const line = el('div', 'badge-new', `免状じゃ。「${BADGE_LABEL[b]}」`);
+    if (b === 'kaiden') line.append(el('small', '', `称号: ${titleOf(progress)}`));
+    panel.append(line);
   }
 
   // 振り返り: 形勢が最も動いた 3 手（勝った対局は決め手 1 つと、ヒヤリとした手を最大 2 つ）
@@ -1142,7 +1262,9 @@ function showMoment(moments: KeyMoment[], index: number, after = false, opts: { 
     return (v > 0 ? '+' : '') + String(v);
   };
   const pct = (v: number | null): string => (v === null ? '?' : `${Math.round(winProb(v))}%`);
-  panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}　勝率 ${pct(log.before)} → ${pct(log.after)}`));
+  // 読みが浅かった数字は確かなものと思わせない（判定のカットインと同じ「目安」の添え書き）
+  const note = typeof log.depth === 'number' && log.depth < SHALLOW_DEPTH ? `（読み ${log.depth} 手・目安）` : '';
+  panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}　勝率 ${pct(log.before)} → ${pct(log.after)}${note}`));
   panel.append(el('p', 'moment-why', momentCaption(mo, opts)));
   if (mo.kind === 'blunder' && log.betterKanji) {
     panel.append(el('div', 'moment-better', `正解: ${log.betterKanji}${better ? '（指す前の盤に緑で表示）' : ''}`));
@@ -1171,6 +1293,7 @@ function closingWord(g: Game, result: Result): string {
     if (g.scolded === 0 && g.badMoves === 0) return '文句のつけようがない。見事じゃった。';
     return 'まあ、勝ちは勝ちじゃ。次も来い。';
   }
+  if (result === 'draw') return '負けはせんかったが、勝ちもせんかった。次は決めに来い。';
   if (g.scolded >= 3) return `気合いだけでは${g.style.name}は崩せん。相手の狙いを読んでから指せ。`;
   if (g.badMoves + g.scolded === 0) return '悪手はなかった。あとは勢いじゃ。もう一局どうじゃ。';
   const lessons = g.style.lessons;

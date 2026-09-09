@@ -660,6 +660,25 @@ button {
   text-align: right;
 }
 
+/* 取った免状の札。成績の下に 1 行で並べる（10px の小さな札。説明文を押しつぶさない幅に収める） */
+.joseki-btn .badges {
+  display: flex;
+  justify-content: flex-end;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.joseki-btn .badge {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(31, 122, 58, 0.12);
+  color: #1f7a3a;
+  opacity: 1;
+}
+
 .joseki-btn .chev {
   flex: none;
   font-size: 20px;
@@ -852,6 +871,12 @@ button {
   line-height: 1.2;
 }
 
+/* 「連続王手の千日手」のような長い言葉は、盤の幅に収まるよう小さく詰める */
+.mate-banner .mate-word.long {
+  font-size: clamp(22px, 6.4vw, 30px);
+  letter-spacing: 0.12em;
+}
+
 .mate-banner .mate-sub {
   font-size: 14px;
   opacity: 0.9;
@@ -894,6 +919,13 @@ button {
   margin: 6px 0 2px;
   padding-left: 18px;
   line-height: 1.6;
+}
+
+/* 称号と通算（主ボタンの下に 1 行、小さめ） */
+.title-screen .rank {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 2px;
 }
 
 .title-screen .credit a {
@@ -1334,6 +1366,25 @@ raizo-rig {
   text-align: center;
 }
 
+/* この一局で取った免状。昇級と同じ雰囲気の帯（色だけ免状の緑） */
+.badge-new {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1f7a3a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+}
+
+.badge-new small {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
 .moments {
   display: flex;
   gap: 8px;
@@ -1507,11 +1558,13 @@ raizo-rig {
   box-shadow: inset 0 0 0 2px var(--hint);
 }
 
+/* エンジンが使えない環境の案内。画面の上（対局画面なら上の帯の下）に固定で出す。
+   下に置くと 375×667 では操作ボタンの列に重なり、「わかった」を押すまでボタンが押せなかった */
 .engine-notice {
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: 12px;
+  top: calc(44px + env(safe-area-inset-top));
   background: var(--panel);
   border: 1px solid var(--board-line);
   border-radius: 12px;

@@ -55,7 +55,7 @@ npx playwright show-report logs/e2e/report   # 直前の E2E のレポートを�
 
 ```
 src/
-  engine/   将棋のルール（盤面、合法手、反則、詰み、表記）
+  engine/   将棋のルール（盤面、合法手、反則、詰み、千日手・連続王手の千日手・持将棋（24 点法）・手数上限 400、SFEN、表記）
   ai/       engine.ts = やねうら王 WASM との USI 通信、search.ts = エンジンが無いときの簡易 AI
   style/    オジジの戦法（yagura.ts / shikenbisha.ts / bougin.ts / nakabisha.ts、一覧は index.ts）、駒組み（plan.ts）、共通の受け（common.ts）、NG・良い手のパターン（patterns.ts）、悪手判定（judge.ts）
   ui/       rig.ts = 雷蔵アニメーションの状態管理、ojiji.ts = フォールバックの SVG、audio.ts = 音声
@@ -99,7 +99,9 @@ assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。�
 - **昇級**: 今の難易度で 2 勝し、課題を累計で 3 つ（門下生では 6 つ）達成すると次の難易度へ。結果画面で知らせ、タイトルの選択も切り替わる。
 - **今日の 3 手**: 結果画面に、形勢が最も動いたプレイヤーの手を最大 3 つ、小さな盤面つきで出す（`src/game/review.ts`）。動いた量は評価値の差ではなく勝率の差で測る（Lichess と同じ式で評価値を勝率に変換）。評価値は形勢が決まるほど膨らむので、点差で選ぶと負けが決まった後の手ばかりになるため。勝率 8 ポイント以上動いた手だけが候補で、足りなければ 3 手にこだわらない。悪化した手を優先し、同程度なら早い手（最初の間違い）を先にする。説明文は指す前と後の形勢（優勢・互角・劣勢・敗勢）で変える。長文の振り返りは出さない。
   - 勝った対局は「決め手」を 1 つ入れ、間違いは 15 ポイント以上のものを最大 2 つ、札は「ヒヤリとした手」。決め手は「最善と次善の評価差が大きい局面で最善を指した手」（判定機が MultiPV 2 で読んだ差 `gap` を記録に残す）。勝率が上がった手は決め手にしない（相手の間違いか読みの揺れであることが多い）。
-- 成績は `localStorage`（`ojiji.progress.v2`）。戦法ごとの対局数・勝ち数・課題達成・ばかもん回数と、現在の難易度。
+- **称号と免状**: 戦法ごとに「初勝利」「叱られず勝利」「皆伝」（師範代でばかもん 0 かつ課題達成で勝つ）の免状が付く（`badgesOf`、`BADGE_LABEL`）。皆伝の数で称号が上がる（門前の小僧 → 通いの弟子 → 内弟子 → 免許皆伝、`titleOf`）。タイトルに称号と通算成績、対局設定の一覧に免状、結果画面に新しく付いた免状を出す。
+- **引き分け**: 千日手・持将棋・400 手は引き分け（`GameResult` の `'draw'`）。局数にだけ数え、勝ちには数えない。連続王手の千日手は王手を続けた側の負け。
+- 成績は `localStorage`（`ojiji.progress.v2`）。戦法ごとの対局数・勝ち数・課題達成・ばかもん回数・免状と、現在の難易度。
 
 ## ヒントと待った
 
@@ -180,3 +182,7 @@ PYTHONIOENCODING=utf-8 python scripts/selfplay-report.py 'logs/run*.jsonl' > log
 2. `src/style/index.ts` の `STYLES` に登録する（タイトルに並ぶ）。
 3. `npm test`。全戦法・全 plan について「相手が待っていれば駒組みが完成する」テストが自動で回る。
 4. `npx vite-node scripts/selfplay.ts -- --style <id>` で自動対局し、台詞を点検する。
+
+## 連絡先
+
+不具合や質問は（公開先 URL）/issues へ。ソースコードの公開先が決まったら、`src/main.ts` の `SOURCE_URL`、`public/privacy.html`、`docs/store/listing.md`、`docs/release-checklist.md`、この節の URL を同時に差し替える。
