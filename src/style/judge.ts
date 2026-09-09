@@ -41,8 +41,9 @@ export interface Judgement {
   verdict: Verdict | null;
   praise: Praise | null;
   // 振り返り用: 指す前と指した後の評価（先手視点）。エンジンが無いときは null。
-  // gap は指す前の局面での最善手と次善手の評価の差（正の値。次善が読めなければ null）。「決め手」の判定に使う
-  analysis?: { before: number; after: number; better: Move | null; gap: number | null };
+  // gap は指す前の局面での最善手と次善手の評価の差（正の値。次善が読めなければ null）。「決め手」の判定に使う。
+  // depth は指す前の読みの深さ（数字の確からしさの目安。記録に残す）
+  analysis?: { before: number; after: number; better: Move | null; gap: number | null; depth: number };
 }
 
 // 駒がタダで取られると判断する損失のしきい値（香車以上）。エンジンが無いときの簡易判定用
@@ -61,6 +62,7 @@ export const SURPRISE_INTERVAL = 6; // 「ほう」は何手か空けて言う
 export const EVAL_HOPELESS = -1000; // 指す前にこれより悪ければ（後手優勢以上）、何を指しても言わない
 export const MATE_MISSED_MAX = 3; // この手数以内の詰みを見逃したときだけ「詰みを見逃すな」（長い詰みは初心者に見えない）
 export const MATE_ALLOWED_MAX = 5; // この手数以内で詰まされる手だけ「詰まされるぞ」。長い詰みは形勢の落ち幅で判断
+export const SHALLOW_DEPTH = 8; // 指す前の読みがこれより浅ければ、形勢の数字に「目安」と添える（浅い読みの数字を確かなものと思わせない）
 const EVAL_CLAMP = 3000;
 
 // 落ち幅と、落ちた結果の形勢から段階を決める（1 は反応なし）
@@ -124,6 +126,21 @@ export function describeSide(a: Analysis): string {
 
 function clampCp(a: Analysis): number {
   return Math.max(-EVAL_CLAMP, Math.min(EVAL_CLAMP, a.cp));
+}
+
+// 読みが浅ければ「（読み N 手・目安）」。十分な深さなら空
+function depthNote(a: Analysis): string {
+  return a.depth < SHALLOW_DEPTH ? `（読み ${a.depth} 手・目安）` : '';
+}
+
+// 正解 better を指したあと、後手にタダ同然（香車以上の得）で取れる駒が残らないか
+function savesFromCapture(pos: Position, better: Move): boolean {
+  pos.apply(better);
+  try {
+    return bestCaptureGain(pos, 1).gain < HANG_THRESHOLD;
+  } finally {
+    pos.undo();
+  }
 }
 
 export class Judge {
@@ -318,6 +335,7 @@ export class Judge {
       after: after.cp,
       better: before.bestmove && before.bestmove !== moveToUsi(move) ? safeMove(pos, before.bestmove) : null,
       gap: second && second.mate === null && before.mate === null ? Math.max(0, clampCp(before) - clampCp(second)) : null,
+      depth: before.depth,
     };
     let verdict = this.engineVerdict(pos, move, before, after);
     let afterBest: Analysis | null = null;
@@ -352,10 +370,12 @@ export class Judge {
     return { ...praise(), analysis };
   }
 
-  // 「正解 ▲○○ → 形勢 +350（先手よし）」「指した ▲△△ → 形勢 -120（後手よし）」の二行
+  // 「正解 ▲○○ → 形勢 +350（先手よし）」「指した ▲△△ → 形勢 -120（後手よし）」の二行。
+  // 指す前の読みが浅ければ 1 行目の末尾に「（読み N 手・目安）」と添える
   private async compareLine(pos: Position, move: Move, better: Move | null, before: Analysis, after: Analysis): Promise<string> {
+    const note = depthNote(before);
     const playedLine = `指した ${moveToKanji(move, 0)} → 形勢 ${formatCp(after)}（${describeSide(after)}）`;
-    if (!better) return `形勢 ${formatCp(before)} → ${formatCp(after)}（${describeSide(after)}）`;
+    if (!better) return `形勢 ${formatCp(before)} → ${formatCp(after)}（${describeSide(after)}）${note}`;
     // 正解を指したあとの局面も同じ条件で評価する（無理なら指す前の評価で代用）
     let best: Analysis = before;
     pos.apply(better);
@@ -366,7 +386,7 @@ export class Judge {
     } finally {
       pos.undo();
     }
-    return `正解 ${moveToKanji(better, 0)} → 形勢 ${formatCp(best)}（${describeSide(best)}）
+    return `正解 ${moveToKanji(better, 0)} → 形勢 ${formatCp(best)}（${describeSide(best)}）${note}
 ${playedLine}`;
   }
 
@@ -423,8 +443,10 @@ ${playedLine}`;
     // 相手の応手による損（取られる・王手される・成り込まれる）
     let consequence = '';
     const threatVictim = threat ? (() => { pos.apply(move); const v = pos.get(threat.to.x, threat.to.y); pos.undo(); return v; })() : null;
+    // 相手の応手でタダ同然に取られる駒の種類（香車以上）。無ければ null
+    const hangs = threatKind === 'capture' && threatVictim && PIECE_VALUE[threatVictim.type] >= HANG_THRESHOLD ? threatVictim.type : null;
     if (threat?.promote) consequence = `その手は${threatText}と成り込まれる。`;
-    else if (threatKind === 'capture' && threatVictim && PIECE_VALUE[threatVictim.type] >= HANG_THRESHOLD) consequence = `その手は${threatText}と取られる。`;
+    else if (hangs) consequence = `その手は${threatText}と取られる。`;
     else if (threatKind === 'check') consequence = `その手は${threatText}と王手されて苦しい。`;
 
     const degree = level === 5 ? '決定的に' : 'はっきり';
@@ -438,7 +460,9 @@ ${playedLine}`;
       const tail = better && missed.includes(moveToKanji(better, 0)) ? '' : betterText;
       why = `${missed}${consequence ? `しかも${consequence}` : ''}${tail}`;
     } else if (consequence) {
-      why = `${consequence}形勢が${degree}悪くなる。${betterText}`;
+      // 取られる手なら、正解を指せばその駒が助かるかも言う（正解でも取られるままなら今まで通り「ここは▲○○じゃ」）
+      const rescue = hangs && better && savesFromCapture(pos, better) ? `${moveToKanji(better, 0)}なら${PIECE_NAME[hangs]}は取られん。` : betterText;
+      why = `${consequence}形勢が${degree}悪くなる。${rescue}`;
     } else {
       why = `${PURPOSE_MARK}形勢を${degree}損ねる手じゃ。`;
     }
