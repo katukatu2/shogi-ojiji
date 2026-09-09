@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   LEVELS, levelById, nextLevel, pickTask, tasksFor, recordGame, emptyProgress, loadProgress, saveProgress, doneTaskSet,
-  PROMOTE_WINS, PROMOTE_TASKS, badgesOf, titleOf, totals, BADGE_IDS, BADGE_LABEL, BADGE_CONDITION, TITLES, Progress, Task,
+  PROMOTE_WINS, PROMOTE_TASKS, badgesOf, titleOf, totals, BADGE_IDS, BADGE_LABEL, BADGE_CONDITION, KAIDEN_CONDITION, TITLES,
+  promotionProgress, promotionLine, Progress, Task,
 } from './progress';
 import { YAGURA } from '../style/yagura';
 import { STYLES } from '../style/index';
@@ -22,6 +23,24 @@ describe('難易度', () => {
     expect(nextLevel('master')).toBeNull();
     expect(nextLevel('apprentice')?.id).toBe('student');
   });
+
+  it('説明文に昇級の条件（勝ち数・課題数・次の難易度）が入っている。最上位は皆伝の条件', () => {
+    for (const lv of LEVELS) {
+      const p = emptyProgress();
+      p.level = lv.id;
+      const pp = promotionProgress(p);
+      if (pp.next) {
+        expect(lv.description, lv.id).toContain(`${pp.winsNeeded} 勝`);
+        expect(lv.description, lv.id).toContain(`課題 ${pp.tasksNeeded} つ`);
+        expect(lv.description, lv.id).toContain(`${pp.next.name}へ`);
+      } else {
+        expect(lv.description, lv.id).toContain(KAIDEN_CONDITION);
+        expect(lv.description, lv.id).toContain('皆伝');
+      }
+    }
+    expect(levelById('apprentice').description).toContain('2 勝と課題 3 つで門下生へ');
+    expect(levelById('student').description).toContain('2 勝と課題 6 つ（累計）で師範代へ');
+  });
 });
 
 describe('今日の課題', () => {
@@ -41,10 +60,89 @@ describe('今日の課題', () => {
   it('未達成の課題から選び、全部達成済みなら全体から回す', () => {
     const all = tasksFor(YAGURA);
     const done = new Set(all.slice(0, all.length - 1).map((t) => `${YAGURA.id}:${t.id}`));
-    const t = pickTask(YAGURA, done, () => 0.99);
-    expect(t.id).toBe(all[all.length - 1].id);
-    const t2 = pickTask(YAGURA, new Set(all.map((t) => `${YAGURA.id}:${t.id}`)), () => 0);
-    expect(t2.id).toBe(all[0].id);
+    // 残り 1 つなら seed が何であれそれ
+    for (const seed of [0, 1, 7, 100]) expect(pickTask(YAGURA, done, seed).id).toBe(all[all.length - 1].id);
+    const allDone = new Set(all.map((t) => `${YAGURA.id}:${t.id}`));
+    expect(pickTask(YAGURA, allDone, 0).id).toBe(all[0].id);
+    expect(pickTask(YAGURA, allDone, all.length).id).toBe(all[0].id);
+    expect(pickTask(YAGURA, allDone, 1).id).toBe(all[1].id);
+  });
+
+  describe('seed で決定的に選ぶ', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('乱数を使わず、同じ seed なら何度呼んでも同じ課題（設定画面と対局で一致する）', () => {
+      const random = vi.spyOn(Math, 'random');
+      for (const st of STYLES) {
+        for (let seed = 0; seed < 10; seed++) {
+          const first = pickTask(st, new Set(), seed);
+          for (let i = 0; i < 20; i++) expect(pickTask(st, new Set(), seed).id, `${st.id} seed=${seed}`).toBe(first.id);
+        }
+      }
+      expect(random).not.toHaveBeenCalled();
+    });
+
+    it('seed 省略時は 0 と同じ（既存の呼び方でも決定的）', () => {
+      expect(pickTask(YAGURA, new Set()).id).toBe(pickTask(YAGURA, new Set(), 0).id);
+      expect(pickTask(YAGURA, new Set()).id).toBe(tasksFor(YAGURA)[0].id);
+    });
+
+    it('未達成の候補を戦法固有 → 共通の定義順に回り、候補数で一周する', () => {
+      const all = tasksFor(YAGURA);
+      // 戦法固有が先、共通（castle … win）が後に並んでいる
+      expect(all.slice(-5).map((t) => t.id)).toEqual(['castle', 'no-scold', 'no-bad', 'no-hint', 'win']);
+      expect(all[0].id).toBe('bishop-exchange');
+      for (let seed = 0; seed < all.length * 2; seed++) {
+        expect(pickTask(YAGURA, new Set(), seed).id, `seed=${seed}`).toBe(all[seed % all.length].id);
+      }
+    });
+
+    it('達成済みは飛ばして残りだけで回る', () => {
+      const all = tasksFor(YAGURA);
+      const done = new Set([`${YAGURA.id}:${all[0].id}`, `${YAGURA.id}:${all[2].id}`, `${YAGURA.id}:win`]);
+      const remaining = all.filter((t) => !done.has(`${YAGURA.id}:${t.id}`));
+      expect(remaining.length).toBe(all.length - 3);
+      for (let seed = 0; seed < remaining.length * 2; seed++) {
+        const t = pickTask(YAGURA, done, seed);
+        expect(done.has(`${YAGURA.id}:${t.id}`), `seed=${seed}`).toBe(false);
+        expect(t.id, `seed=${seed}`).toBe(remaining[seed % remaining.length].id);
+      }
+    });
+
+    it('別の戦法の達成は数えない（done のキーは戦法つき）', () => {
+      const all = tasksFor(YAGURA);
+      const done = new Set([`bougin:${all[0].id}`, 'bougin:castle']);
+      expect(pickTask(YAGURA, done, 0).id).toBe(all[0].id);
+    });
+
+    it('対局数を seed にすると、対局ごとに次の課題へ進み、達成した課題は次から出ない', () => {
+      const p = emptyProgress();
+      const all = tasksFor(YAGURA);
+      const seen: string[] = [];
+      for (let g = 0; g < 4; g++) {
+        const games = p.styles.yagura?.games ?? 0;
+        // 設定画面のプレビューと startGame が同じ seed を渡せば同じ課題になる
+        const preview = pickTask(YAGURA, doneTaskSet(p), games);
+        const task = pickTask(YAGURA, doneTaskSet(p), games);
+        expect(task.id).toBe(preview.id);
+        expect(seen).not.toContain(task.id);
+        seen.push(task.id);
+        recordGame(p, { styleId: 'yagura', result: 'lose', scolded: 0, task, taskDone: true });
+      }
+      // 順に回る: 0 → all[0]、達成後 seed 1 で残り [1..] の 1 番目 = all[2]、…
+      expect(seen[0]).toBe(all[0].id);
+      expect(seen[1]).toBe(all[2].id);
+    });
+
+    it('壊れた seed（負・小数・NaN）でも落ちず、候補の中から返す', () => {
+      const all = tasksFor(YAGURA);
+      const ids = new Set(all.map((t) => t.id));
+      for (const seed of [-1, -7, 1.9, NaN, Infinity, -Infinity]) {
+        expect(ids.has(pickTask(YAGURA, new Set(), seed).id), `seed=${seed}`).toBe(true);
+      }
+      expect(pickTask(YAGURA, new Set(), 1.9).id).toBe(all[1].id);
+      expect(pickTask(YAGURA, new Set(), NaN).id).toBe(all[0].id);
+    });
   });
 });
 
@@ -80,6 +178,88 @@ describe('成績と昇級', () => {
       expect(r.promotion).toBeNull();
     }
     expect(p.level).toBe('apprentice');
+  });
+
+  it('門下生では課題が累計 6 つ必要', () => {
+    const p = emptyProgress();
+    p.level = 'student';
+    const tasks = tasksFor(YAGURA);
+    // 課題 5 つと 2 勝では昇級しない
+    for (let i = 0; i < 5; i++) expect(recordGame(p, { styleId: 'yagura', result: i < 2 ? 'win' : 'lose', scolded: 0, task: tasks[i], taskDone: true }).promotion).toBeNull();
+    expect(p.level).toBe('student');
+    // 6 つ目で昇級
+    expect(recordGame(p, { styleId: 'yagura', result: 'lose', scolded: 0, task: tasks[5], taskDone: true }).promotion?.to.id).toBe('master');
+    expect(p.level).toBe('master');
+  });
+});
+
+describe('昇級の進み具合', () => {
+  it('最初は見習い。門下生へ 2 勝と課題 3 つ、まだ 0', () => {
+    const pp = promotionProgress(emptyProgress());
+    expect(pp).toEqual({ next: levelById('student'), winsNeeded: PROMOTE_WINS, tasksNeeded: PROMOTE_TASKS, winsHave: 0, tasksHave: 0 });
+    expect(promotionLine(emptyProgress())).toBe('昇級まで: あと 2 勝・課題 3（門下生へ）');
+  });
+
+  it('勝ちと課題を重ねると have が増え、残りが減る', () => {
+    const p = emptyProgress();
+    const tasks = tasksFor(YAGURA);
+    recordGame(p, { styleId: 'yagura', result: 'win', scolded: 0, task: tasks[0], taskDone: true });
+    expect(promotionProgress(p)).toMatchObject({ winsHave: 1, tasksHave: 1, winsNeeded: 2, tasksNeeded: 3 });
+    expect(promotionLine(p)).toBe('昇級まで: あと 1 勝・課題 2（門下生へ）');
+    // 別の戦法の課題も累計に入る。引き分けは勝ちに数えない
+    recordGame(p, { styleId: 'bougin', result: 'draw', scolded: 0, task: tasks[1], taskDone: true });
+    expect(promotionProgress(p)).toMatchObject({ winsHave: 1, tasksHave: 2 });
+    expect(promotionLine(p)).toBe('昇級まで: あと 1 勝・課題 1（門下生へ）');
+    // 負けと未達成では変わらない
+    recordGame(p, { styleId: 'yagura', result: 'lose', scolded: 2, task: tasks[2], taskDone: false });
+    expect(promotionProgress(p)).toMatchObject({ winsHave: 1, tasksHave: 2 });
+  });
+
+  it('昇級すると次の難易度の条件に切り替わり、勝ち数は 0 から。課題は累計のまま', () => {
+    const p = emptyProgress();
+    const tasks = tasksFor(YAGURA);
+    for (let i = 0; i < 3; i++) recordGame(p, { styleId: 'yagura', result: 'win', scolded: 0, task: tasks[i], taskDone: true });
+    expect(p.level).toBe('student');
+    expect(promotionProgress(p)).toEqual({ next: levelById('master'), winsNeeded: PROMOTE_WINS, tasksNeeded: PROMOTE_TASKS * 2, winsHave: 0, tasksHave: 3 });
+    expect(promotionLine(p)).toBe('昇級まで: あと 2 勝・課題 3（師範代へ）');
+  });
+
+  it('必要数を超えても「あと」は 0 で止まる', () => {
+    const p = emptyProgress();
+    p.level = 'student';
+    p.winsAtLevel = { student: 5 };
+    p.styles.yagura = { games: 5, wins: 5, scolded: 0, tasksDone: ['yagura:win', 'yagura:castle'], badges: [] };
+    expect(promotionProgress(p)).toMatchObject({ winsHave: 5, winsNeeded: 2, tasksHave: 2, tasksNeeded: 6 });
+    expect(promotionLine(p)).toBe('昇級まで: あと 0 勝・課題 4（師範代へ）');
+  });
+
+  it('師範代なら next は null で、一行も出さない', () => {
+    const p = emptyProgress();
+    p.level = 'master';
+    p.winsAtLevel = { apprentice: 2, student: 2, master: 1 };
+    const pp = promotionProgress(p);
+    expect(pp.next).toBeNull();
+    expect(pp.winsNeeded).toBe(0);
+    expect(pp.tasksNeeded).toBe(0);
+    expect(pp.winsHave).toBe(1);
+    expect(promotionLine(p)).toBeNull();
+  });
+
+  it('winsHave は今の難易度の勝ち数だけ（前の難易度の勝ちは数えない）', () => {
+    const p = emptyProgress();
+    p.level = 'student';
+    p.winsAtLevel = { apprentice: 4 };
+    expect(promotionProgress(p).winsHave).toBe(0);
+    p.winsAtLevel.student = 1;
+    expect(promotionProgress(p).winsHave).toBe(1);
+  });
+});
+
+describe('皆伝の条件文', () => {
+  it('KAIDEN_CONDITION は免状の説明と同じ文で、いつでも取れる', () => {
+    expect(KAIDEN_CONDITION).toBeTruthy();
+    expect(KAIDEN_CONDITION).toBe(BADGE_CONDITION.kaiden);
+    expect(KAIDEN_CONDITION).toContain('師範代');
   });
 });
 

@@ -18,11 +18,19 @@ export interface Level {
   planToleranceScale: number;
 }
 
+// 昇級の条件: 「今の難易度で PROMOTE_WINS 勝、かつ課題を累計で PROMOTE_TASKS × 段階（見習い 3・門下生 6）達成」
+export const PROMOTE_WINS = 2;
+export const PROMOTE_TASKS = 3;
+
+// 皆伝（師範代で叱られず課題も達成して勝つ）の条件文。免状の説明と対局設定の強さ欄で使う
+export const KAIDEN_CONDITION = '師範代のオジジに、叱られず、課題も達成して勝つ';
+
+// description には昇級の条件（最上位は皆伝の条件）も含める。対局設定の強さ欄にそのまま出す
 export const LEVELS: Level[] = [
   {
     id: 'apprentice',
     name: '見習い',
-    description: 'オジジは手を抜く。駒組みは本気だが、そのあとは大らか。まず一勝を。',
+    description: `オジジは手を抜く。駒組みは本気だが、そのあとは大らか。まず一勝を。${PROMOTE_WINS} 勝と課題 ${PROMOTE_TASKS} つで門下生へ。`,
     multipv: 5,
     tolerance: 900,
     depth: 3,
@@ -31,7 +39,7 @@ export const LEVELS: Level[] = [
   {
     id: 'student',
     name: '門下生',
-    description: 'オジジはそこそこ本気。悪手を咎めてくるが、こちらの良い手も通る。',
+    description: `オジジはそこそこ本気。悪手を咎めてくるが、こちらの良い手も通る。${PROMOTE_WINS} 勝と課題 ${PROMOTE_TASKS * 2} つ（累計）で師範代へ。`,
     multipv: 4,
     tolerance: 400,
     depth: 5,
@@ -40,7 +48,7 @@ export const LEVELS: Level[] = [
   {
     id: 'master',
     name: '師範代',
-    description: 'オジジは本気。隙を見せれば一気に来る。',
+    description: `オジジは本気。隙を見せれば一気に来る。ここが最上位。${KAIDEN_CONDITION}と皆伝。`,
     multipv: 3,
     tolerance: 150,
     depth: 8,
@@ -118,12 +126,16 @@ export function tasksFor(style: Style): Task[] {
   return [...(STYLE_TASKS[style.id] ?? []), ...COMMON_TASKS];
 }
 
-// まだ達成していない課題から一つ選ぶ。全部達成済みなら共通課題から回す
-export function pickTask(style: Style, done: ReadonlySet<string>, random: () => number = Math.random): Task {
+// まだ達成していない課題から一つ選ぶ。全部達成済みなら全体から回す。
+// 乱数は使わず、候補を安定した順（戦法固有 → 共通、定義順）に並べて seed 番目（候補数で割った余り）を返す。
+// 画面は seed にその戦法の対局数を渡す。対局設定の「次の課題」と対局で出る課題が同じになり、対局ごとに順に回る
+export function pickTask(style: Style, done: ReadonlySet<string>, seed = 0): Task {
   const all = tasksFor(style);
   const remaining = all.filter((t) => !done.has(`${style.id}:${t.id}`));
   const pool = remaining.length > 0 ? remaining : all;
-  return pool[Math.floor(random() * pool.length)];
+  // 壊れた値（NaN・負・小数）でも落ちないように整える
+  const n = Number.isFinite(seed) ? Math.abs(Math.floor(seed)) : 0;
+  return pool[n % pool.length];
 }
 
 // ===== 称号と免許 =====
@@ -145,7 +157,7 @@ export const BADGE_LABEL: Record<string, string> = {
 export const BADGE_CONDITION: Record<string, string> = {
   'first-win': 'その戦法のオジジに初めて勝つ',
   'clean-win': '「ばかもーん！」を一度も言わせずに勝つ',
-  kaiden: '師範代のオジジに、叱られず、課題も達成して勝つ',
+  kaiden: KAIDEN_CONDITION,
 };
 
 // 称号。皆伝の数（戦法ごとに最大 1 つ）で決まる
@@ -242,10 +254,40 @@ export interface Promotion {
   to: Level;
 }
 
-// 一局の結果を成績に反映する。昇級の条件は「今の難易度で 2 勝、かつ課題を 3 つ達成」
-export const PROMOTE_WINS = 2;
-export const PROMOTE_TASKS = 3;
+// 昇級の進み具合。
+// next: 次の難易度（師範代なら null）。winsNeeded / tasksNeeded は昇級に必要な数（しきい値。師範代なら 0）、
+// winsHave は今の難易度での勝ち数、tasksHave は課題達成数の累計（全戦法）。
+// 「あと N 勝・課題 M」は max(0, needed - have) で出す（promotionLine を参照）
+export interface PromotionProgress {
+  next: Level | null;
+  winsNeeded: number;
+  tasksNeeded: number;
+  winsHave: number;
+  tasksHave: number;
+}
 
+export function promotionProgress(p: Progress): PromotionProgress {
+  const next = nextLevel(p.level);
+  const rank = LEVELS.findIndex((l) => l.id === p.level) + 1; // 見習い 1・門下生 2・師範代 3
+  return {
+    next,
+    winsNeeded: next ? PROMOTE_WINS : 0,
+    tasksNeeded: next ? PROMOTE_TASKS * rank : 0,
+    winsHave: p.winsAtLevel?.[p.level] ?? 0,
+    tasksHave: Object.values(p.styles).reduce((n, s) => n + s.tasksDone.length, 0),
+  };
+}
+
+// 対局設定の強さ欄に出す一行。「昇級まで: あと 1 勝・課題 2（門下生へ）」。師範代なら null
+export function promotionLine(p: Progress): string | null {
+  const pp = promotionProgress(p);
+  if (!pp.next) return null;
+  const wins = Math.max(0, pp.winsNeeded - pp.winsHave);
+  const tasks = Math.max(0, pp.tasksNeeded - pp.tasksHave);
+  return `昇級まで: あと ${wins} 勝・課題 ${tasks}（${pp.next.name}へ）`;
+}
+
+// 一局の結果を成績に反映する。昇級の条件は promotionProgress の needed に have が届いたとき
 // 戻り値: promotion は昇級したとき、newBadges はこの一局で新しく取った実績（表示順）
 export function recordGame(p: Progress, o: GameOutcome): { promotion: Promotion | null; newBadges: string[] } {
   const r = p.styles[o.styleId] ?? emptyRecord();
@@ -263,12 +305,11 @@ export function recordGame(p: Progress, o: GameOutcome): { promotion: Promotion 
 
   p.winsAtLevel = p.winsAtLevel ?? {};
   if (o.result === 'win') p.winsAtLevel[p.level] = (p.winsAtLevel[p.level] ?? 0) + 1;
-  const tasksTotal = Object.values(p.styles).reduce((n, s) => n + s.tasksDone.length, 0);
-  const next = nextLevel(p.level);
-  if (next && (p.winsAtLevel[p.level] ?? 0) >= PROMOTE_WINS && tasksTotal >= PROMOTE_TASKS * (LEVELS.findIndex((l) => l.id === p.level) + 1)) {
+  const pp = promotionProgress(p);
+  if (pp.next && pp.winsHave >= pp.winsNeeded && pp.tasksHave >= pp.tasksNeeded) {
     const from = levelById(p.level);
-    p.level = next.id;
-    return { promotion: { from, to: next }, newBadges };
+    p.level = pp.next.id;
+    return { promotion: { from, to: pp.next }, newBadges };
   }
   return { promotion: null, newBadges };
 }
