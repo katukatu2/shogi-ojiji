@@ -1,0 +1,50 @@
+# Android の debug APK を GitHub Actions で作る（開発機に JDK も Android SDK も無くても確認用の APK を得るため）。
+# main への push と手動実行（workflow_dispatch）で動き、できた APK を Artifacts に残す。
+# 署名付きのリリース版（aab）は docs/release-checklist.md の手順で手元で作る。
+name: Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Capacitor 8 は android/app/capacitor.build.gradle と @capacitor/android で
+      # sourceCompatibility JavaVersion.VERSION_21 を指定しているので、JDK は 21（17 だと "invalid source release: 21" で止まる）
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      # android/variables.gradle の compileSdkVersion 36 に合わせる。足りないものは AGP がライセンス承諾済みなら自動で取る
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-36 build-tools;36.0.0 platform-tools
+      - run: npm ci
+      - run: npm run build
+      # dist/ を android/app/src/main/assets/public へ複製し、プラグインの gradle 設定を更新する
+      - run: npx cap sync android
+      # android/gradlew は git 上で実行ビットが無い（100644）ので付けてから呼ぶ。
+      # gradle 本体は android/gradle/wrapper/gradle-wrapper.properties の版が wrapper 経由で入る
+      - run: chmod +x gradlew
+        working-directory: android
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
