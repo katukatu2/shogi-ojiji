@@ -16,12 +16,16 @@
     "selfplay": "vite-node scripts/selfplay.ts --",
     "assets:faces": "python scripts/build-faces.py",
     "assets:sfx": "node scripts/encode-sfx.mjs",
-    "assets:body": "python scripts/build-body.py"
+    "assets:body": "python scripts/build-body.py",
+    "e2e": "playwright test",
+    "icons": "node scripts/build-icons.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "@playwright/test": "^1.63.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.4.1",
     "lamejs": "^1.2.1",
     "typescript": "^5.9.3",
