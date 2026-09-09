@@ -18,6 +18,16 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # E2E（Playwright、Chromium のみ）。vite dev を 5179 番で起動して画面の動線を確かめる
+      - run: npx playwright install --with-deps chromium
+      - id: e2e
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() && steps.e2e.outcome == 'failure' }}
+        with:
+          name: playwright-report
+          path: logs/e2e/report
+          retention-days: 7
       # 台詞の点検: 各戦法 2 局ずつ自動対局してエラーが出ないことだけ確かめる
       - run: |
           for s in yagura shikenbisha kakugawari bougin nakabisha; do

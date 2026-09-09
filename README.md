@@ -14,6 +14,22 @@ npm run typecheck
 npm run build      # dist/ に静的ファイルを出力
 ```
 
+## テスト
+
+```bash
+npm test                          # vitest（ルール・エンジン・定跡・振り返りなどの単体テスト。src/**/*.test.ts）
+npm run e2e                       # Playwright の E2E（tests/e2e/*.spec.ts。vite dev を 5179 番で自動起動する）
+npx playwright install chromium   # E2E の初回だけ。Chromium が無ければ入れる
+npx playwright show-report logs/e2e/report   # 直前の E2E のレポートを開く
+```
+
+- E2E は `playwright.config.ts`。Chromium だけ、スマートフォン相当の画面（375×667）、失敗時は 1 回だけ再試行し、そのときトレースを残す。結果とレポートは `logs/e2e/`（git 管理外）。
+- 確かめる流れ: タイトル → 対局設定 → 対局（「対局開始」の演出）、駒をタップして▲７六歩を指しオジジが応手する、形だけの NG（▲４八玉の玉飛接近）でカットインが出て「指し直す」で戻る、ヒント・待った、投了 → 結果 → 「同じ設定でもう一局」、設定の保存（再読み込み後のタイトルに前回の戦法・強さ）、初回の動線（`localStorage` が空なら対局設定を必ず通る）。
+- エンジンの有無に依存しない。やねうら王が動かない環境では「判定: 簡易」のまま進み、ヒントは「出せん」と言うだけで、どちらでも通る。`OJIJI_E2E_NO_ENGINE=1 npm run e2e` でエンジンのスクリプトを読ませず、その環境を再現できる。
+- セレクタは画面の文言（`getByRole` / `getByText`）が中心。クラス名は盤のマス（`.board .cell`、9×9 を行優先）と最終手・吹き出し・カットインの容器だけ。開発サーバーでは `window.__ojiji.game()` で手数などの状態を読む。
+- `tests/e2e/` は vitest の対象から外してある（`vite.config.ts` の `test.exclude`）。
+- CI（`.github/workflows/ci.yml`）でも Chromium を入れて `npm run e2e` を回し、失敗時はレポートを `playwright-report` として保存する。
+
 ## 収録している戦法（オジジが指す側）
 
 | 戦法 | オジジの組み方 | 対局後の教え（例） |
