@@ -4,7 +4,9 @@
 // 勝率にすれば前者はほぼ 0 ポイント、後者は約 25 ポイントで、正しい順になる。
 //
 // 勝った対局では「決め手」を 1 つ入れる。勝率が上がった手ではなく（それは相手の間違いか読みの揺れ）、
-// 「最善と次善の差が大きい局面で、最善を指した」手。間違えると勝ちが消えていた手が、勝ちにつなげた手。
+// 「優勢の局面で、次善を指すと勝ちが消えていたところを、最善を指した」手。
+// ただし取り返しや王手の逃げ方のように、他に指しようがない手は、次善との差が大きくても決め手と呼ばない
+// （「ここを間違えると勝ちが消えておった」が嘘になる）。条件に合う手が無ければ決め手は出さない。
 
 export interface MoveLog {
   ply: number; // 何手目（1 始まり、プレイヤーの手）
@@ -14,6 +16,11 @@ export interface MoveLog {
   before: number | null; // 指す前の評価（先手視点）。エンジンが無ければ null
   after: number | null; // 指した後の評価
   gap?: number | null; // 指す前の局面での「最善手と次善手の評価の差」（先手視点、正の値）。決め手の判定に使う
+  capture?: boolean; // 駒を取る手（指す前の盤で、移動先に相手の駒がある）
+  recapture?: boolean; // 取り返し（直前にオジジが駒を取った地点に指す手）
+  inCheck?: boolean; // 指す前に王手を受けていた
+  legalCount?: number; // 指す前の合法手の数
+  depth?: number | null; // 判定の読みの深さ（エンジンが無ければ null）
   level: number; // 反応の段階（1 = 何もなし）
   headline: string; // オジジの反応の見出し（無ければ空）
   why: string; // 説明（無ければ空）
@@ -46,8 +53,12 @@ export function winProb(cp: number): number {
 export const MIN_SWING = 8; // 勝率がこれ（ポイント）以上動いた手だけを候補にする。足りなければ 3 手にこだわらない
 export const MIN_SWING_WON = 15; // 勝った対局では、間違いはこれ以上動いた手だけ
 export const MAX_BLUNDERS_WON = 2; // 勝った対局で見せる間違いの数
-export const DECISIVE_GAP = 12; // 決め手: 最善と次善の勝率差がこれ以上
-export const DECISIVE_LOSS = 3; // 決め手: 指した手が最善からこれ以内の損
+export const DECISIVE_MIN_WIN = 65; // 決め手: 指す前の勝率がこれ以上（優勢）
+export const DECISIVE_DRIFT = 3; // 決め手: 指した後の勝率が指す前からこれ以内。上がった手も読みの揺れとみなして除く
+export const DECISIVE_SECOND_MAX = 50; // 決め手: 次善を指していたら勝率がこれ以下（勝ちが消えていた）
+export const DECISIVE_MIN_PLY = 12; // 決め手: これ以下の手数（序盤）は除く
+export const DECISIVE_CHECK_ESCAPES = 3; // 決め手: 王手を受けていて、逃げ方がこれ以下しか無い手は除く（強制された手）
+export const QUIET_SWING = 15; // 段階 2 以下（軽い反応か無言）だった手が、これ以上勝率を落としていたら説明を形勢の文に差し替える
 const TIE_STEP = 5; // 勝率の差がこの幅の中なら同程度とみなし、早い手を優先する（最初の間違いに価値がある）
 
 // 形勢の言葉。勝率で区切る（先手視点）
@@ -59,8 +70,23 @@ export function standing(win: number): Standing {
   return 'even';
 }
 
+// 決め手の候補なら「最善と次善の勝率差（ポイント）」を返し、違えば null。
+// 優勢の局面で最善（から 3 ポイント以内）を指し、次善なら勝率 50% 以下に落ちていた手。
+// 序盤、駒を取る手、取り返し、王手の逃げ方が少ない手は、他に選びようが無いので決め手にしない
+function decisiveGap(log: MoveLog, before: number, winBefore: number, winAfter: number): number | null {
+  if (typeof log.gap !== 'number' || !Number.isFinite(log.gap)) return null;
+  if (log.ply <= DECISIVE_MIN_PLY) return null;
+  if (log.capture === true || log.recapture === true) return null;
+  if (log.inCheck === true && typeof log.legalCount === 'number' && log.legalCount <= DECISIVE_CHECK_ESCAPES) return null;
+  if (winBefore < DECISIVE_MIN_WIN) return null;
+  if (Math.abs(winBefore - winAfter) > DECISIVE_DRIFT) return null;
+  const winSecond = winProb(before - log.gap);
+  if (winSecond > DECISIVE_SECOND_MAX) return null;
+  return winBefore - winSecond;
+}
+
 // 最も大きく動いた手から最大 count 件。悪化した手を優先し、残りを好転した手で埋める（どちらも足切りを超えたものだけ）。
-// 勝った対局は、決め手 1 つ → 間違い（最大 2 つ、足切り高め）→ 好手 の順
+// 勝った対局は、決め手 1 つ（あれば） → 間違い（最大 2 つ、足切り高め）→ 好手 の順。負けた対局に決め手は無い
 export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {}): KeyMoment[] {
   const won = opts.won === true;
   const minSwing = won ? MIN_SWING_WON : MIN_SWING;
@@ -71,10 +97,10 @@ export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {})
     const winBefore = winProb(log.before);
     const winAfter = winProb(log.after);
     const swing = winBefore - winAfter;
-    // 決め手の候補: 最善を（ほぼ）指していて、次善だと勝率が大きく落ちた局面。もう決まった局面（勝率 92% 超）は除く
-    if (log.gap !== null && log.gap !== undefined && log.gap > 0 && swing <= DECISIVE_LOSS && winBefore <= 92 && winBefore >= 35) {
-      const gapPts = winBefore - winProb(log.before - log.gap);
-      if (gapPts >= DECISIVE_GAP && (!decisive || gapPts > decisive.gapPts!)) {
+    if (won) {
+      // 決め手の候補が複数あれば、次善との差が最も大きい手
+      const gapPts = decisiveGap(log, log.before, winBefore, winAfter);
+      if (gapPts !== null && (!decisive || gapPts > decisive.gapPts!)) {
         decisive = { log, kind: 'decisive', swing, winBefore, winAfter, gapPts };
       }
     }
@@ -94,16 +120,17 @@ export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {})
       used.add(m.log.ply);
     }
   };
-  if (won && decisive) push(decisive);
+  if (decisive) push(decisive);
   const maxBlunders = won ? MAX_BLUNDERS_WON : count;
   let n = 0;
   for (const m of blunders) if (n < maxBlunders) { push(m); n++; }
-  if (!won && decisive) push(decisive);
   for (const m of goods) push(m);
   return out.sort((a, b) => a.log.ply - b.log.ply);
 }
 
-// 振り返りの一言（数字を並べず、何が起きたかを短く）。指す前と後の形勢で文を変える
+// 振り返りの一言（数字を並べず、何が起きたかを短く）。指す前と後の形勢で文を変える。
+// 対局中の説明（why）は段階 3 以上ならそのまま使う。段階 2 以下は「ワシならこう打つな」程度の軽い反応か無言なので、
+// 勝率を大きく落とした手にはその説明を使わず、形勢の文で言い直す（優勢だったなら「黙っておった」と断ってから）
 export function momentCaption(m: KeyMoment, opts: ReviewOptions = {}): string {
   const from = standing(m.winBefore);
   const to = standing(m.winAfter);
@@ -113,10 +140,12 @@ export function momentCaption(m: KeyMoment, opts: ReviewOptions = {}): string {
     if (from === 'losing' || from === 'lost') return '好手じゃった。ここで盛り返した。';
     return '好手じゃった。ここで流れが来た。';
   }
-  if (m.log.why) return m.log.why;
+  const quiet = m.log.level <= 2 && m.swing >= QUIET_SWING;
+  if (m.log.why && !quiet) return m.log.why;
+  const head = quiet && from === 'winning' ? '勝っておったので黙っておったが、' : '';
   const better = m.log.betterKanji ? `${m.log.betterKanji}が良かった。` : '';
-  if (from === 'winning' && to === 'winning') return m.swing >= 20 ? `勝ちを危うくした。${better}` : `優勢は保ったが、少し緩んだ。${better}`;
-  if (from === 'winning') return `リードを手放した。${better}`;
+  if (from === 'winning' && to === 'winning') return m.swing >= 20 ? `${head}勝ちを危うくした。${better}` : `${head}優勢は保ったが、少し緩んだ。${better}`;
+  if (from === 'winning') return `${head}リードを手放した。${better}`;
   if (from === 'even' && to === 'even') return `互角の中で少し損をした。${better}`;
   if (from === 'even') return `ここで形勢が傾いた。${better}`;
   if (from === 'losing' && to === 'lost') return `苦しかったが、ここで決まった。${better}`;
