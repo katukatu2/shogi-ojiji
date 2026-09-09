@@ -30,6 +30,21 @@ interface Undo {
   captured: Piece | null;
 }
 
+// 千日手の判定に使う、各手数の局面の記録（key は盤・持ち駒・手番、check はその局面で手番側が王手されているか）
+interface Snapshot {
+  key: string;
+  check: boolean;
+}
+
+// 千日手・持将棋の判定結果。'none' は成立していない。sente = 先手（color 0）
+export type RuleEnding = 'none' | 'draw' | 'sente-loses' | 'gote-loses';
+
+// 千日手になる同一局面の回数
+const REPETITION_COUNT = 4;
+// 持将棋（24 点法）の点数。飛・角とその成駒は 5 点、玉以外の他の駒は 1 点
+const ENTERING_KING_POINTS = 24;
+const BIG_PIECES: ReadonlySet<PieceType> = new Set<PieceType>(['HI', 'KA', 'RY', 'UM']);
+
 const SFEN_LETTER: Record<PieceType, string> = {
   FU: 'P', KY: 'L', KE: 'N', GI: 'S', KI: 'G', KA: 'B', HI: 'R', OU: 'K',
   TO: '+P', NY: '+L', NK: '+N', NG: '+S', UM: '+B', RY: '+R',
@@ -42,6 +57,12 @@ export class Position {
   turn: Color = 0;
   moves: Move[] = [];
   private undoStack: Undo[] = [];
+  // history[i] は i 手目まで進めた局面の記録（0 は開始局面）。apply() では作らず、
+  // repetition() と clone() のときに足りない分だけ埋める（apply/undo は探索で大量に呼ばれるため）
+  private history: Snapshot[] = [];
+
+  // これ以上長い対局は引き分けにする手数（判定は isTooLong()、扱いは呼ぶ側）
+  static MAX_PLIES = 400;
 
   static initial(): Position {
     const p = new Position();
@@ -60,11 +81,14 @@ export class Position {
   }
 
   clone(): Position {
+    // 複製は clone より前の手を戻せないので、千日手の履歴はここで埋めてから引き継ぐ
+    this.fillHistory();
     const p = new Position();
     p.board = this.board.map((c) => (c ? { ...c } : null));
     p.hands = [{ ...this.hands[0] }, { ...this.hands[1] }];
     p.turn = this.turn;
     p.moves = this.moves.slice();
+    p.history = this.history.slice();
     return p;
   }
 
@@ -326,6 +350,8 @@ export class Position {
     const u = this.undoStack.pop();
     if (!u) return;
     this.moves.pop();
+    // 戻した手より後の局面の記録は捨てる（別の手を指したら埋め直す）
+    if (this.history.length > this.moves.length + 1) this.history.length = this.moves.length + 1;
     const color = (1 - this.turn) as Color;
     this.turn = color;
     const m = u.move;
@@ -349,5 +375,81 @@ export class Position {
   // 手番側に合法手がない（詰み。将棋ではステイルメイトも負け）
   isGameOver(): boolean {
     return this.legalMoves().length === 0;
+  }
+
+  private snapshot(): Snapshot {
+    return { key: this.key(), check: this.inCheck(this.turn) };
+  }
+
+  // 記録の無い手数まで手を戻し、指し直しながら局面を記録する。対局中は毎手 repetition() が呼ばれるので、
+  // 戻すのは直前の 1〜2 手だけ。戻せない分（複製前の手など）は空の記録で埋め、どの局面とも一致させない
+  private fillHistory(): void {
+    const n = this.moves.length;
+    const start = this.history.length;
+    if (start > n) return;
+    const back = Math.min(n - start, this.undoStack.length);
+    const replay = this.moves.slice(n - back);
+    for (let i = 0; i < back; i++) this.undo();
+    for (let ply = start; ply < n - back; ply++) this.history.push({ key: '', check: false });
+    this.history.push(this.snapshot());
+    for (const m of replay) {
+      this.apply(m);
+      this.history.push(this.snapshot());
+    }
+  }
+
+  // 千日手: 同一局面（盤・持ち駒・手番）が 4 回現れたら成立。最初の同一局面から今までの間、
+  // 片方の手がすべて王手なら連続王手の千日手で、王手を続けた側の負け
+  repetition(): RuleEnding {
+    this.fillHistory();
+    const n = this.moves.length;
+    const key = this.history[n].key;
+    // 手番も同じでなければならないので 2 手ごとに見る
+    let count = 1;
+    let first = n;
+    for (let i = n - 2; i >= 0 && count < REPETITION_COUNT; i -= 2) {
+      if (this.history[i].key === key) {
+        count++;
+        first = i;
+      }
+    }
+    if (count < REPETITION_COUNT) return 'none';
+    const allCheck: [boolean, boolean] = [true, true];
+    for (let ply = first; ply < n; ply++) {
+      // ply 手目を指した側（this.turn は n 手目の手番）。その手が王手なら次の局面で相手が王手されている
+      const mover = ((this.turn + n - ply) % 2) as Color;
+      if (!this.history[ply + 1].check) allCheck[mover] = false;
+    }
+    // 両方が王手を続けた（まず起きない）なら、4 回目の局面を作った側の負け
+    if (allCheck[0] && allCheck[1]) return this.turn === 1 ? 'sente-loses' : 'gote-loses';
+    if (allCheck[0]) return 'sente-loses';
+    if (allCheck[1]) return 'gote-loses';
+    return 'draw';
+  }
+
+  // 持将棋（入玉）: 両方の玉が敵陣に入っているときだけ判定する。24 点法で両方 24 点以上なら引き分け、
+  // 24 点未満の側が負け（駒が全部あれば合計 54 点なので、両方 24 点未満にはならない）
+  enteringKing(): RuleEnding {
+    const sente = this.findKing(0);
+    const gote = this.findKing(1);
+    if (!sente || !gote || !Position.inPromotionZone(sente.y, 0) || !Position.inPromotionZone(gote.y, 1)) return 'none';
+    const points: [number, number] = [0, 0];
+    for (const c of this.board) {
+      if (c && c.type !== 'OU') points[c.color] += BIG_PIECES.has(c.type) ? 5 : 1;
+    }
+    for (const color of [0, 1] as Color[]) {
+      const hand = this.hands[color];
+      for (const hp of Object.keys(hand) as HandPiece[]) {
+        points[color] += hand[hp] * (BIG_PIECES.has(hp) ? 5 : 1);
+      }
+    }
+    if (points[0] < ENTERING_KING_POINTS) return 'sente-loses';
+    if (points[1] < ENTERING_KING_POINTS) return 'gote-loses';
+    return 'draw';
+  }
+
+  // 手数が上限に達した（呼ぶ側が引き分けにする）
+  isTooLong(): boolean {
+    return this.moves.length >= Position.MAX_PLIES;
   }
 }
