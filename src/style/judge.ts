@@ -227,7 +227,7 @@ export class Judge {
       if (threat && clampCp(threat.analysis) <= clampCp(before) - THREAT_DROP) {
         const reply = afterBest?.pv[0] ?? null;
         if (reply !== moveToUsi(threat.move)) {
-          return `ここは${moveToKanji(best, 0)}と${moveToKanji(threat.move, 1)}を防ぐ手じゃ。`;
+          return `ここは${moveToKanji(best, 0, null, pos)}と${moveToKanji(threat.move, 1, null, pos)}を防ぐ手じゃ。`;
         }
       }
     }
@@ -321,7 +321,7 @@ export class Judge {
             kind: 'pattern',
             level: Math.max(3, severity(before, after)) as Level,
             headline: soft.p.headline,
-            why: soft.why + (better ? `ここは${moveToKanji(better, 0)}じゃ。` : ''),
+            why: soft.why + (better ? `ここは${moveToKanji(better, 0, null, pos)}じゃ。` : ''),
             better,
             evalLine: await this.compareLine(pos, move, better, before, after),
             ignoreKey: `pattern:${soft.p.id}`,
@@ -374,7 +374,7 @@ export class Judge {
   // 指す前の読みが浅ければ 1 行目の末尾に「（読み N 手・目安）」と添える
   private async compareLine(pos: Position, move: Move, better: Move | null, before: Analysis, after: Analysis): Promise<string> {
     const note = depthNote(before);
-    const playedLine = `指した ${moveToKanji(move, 0)} → 形勢 ${formatCp(after)}（${describeSide(after)}）`;
+    const playedLine = `指した ${moveToKanji(move, 0, null, pos)} → 形勢 ${formatCp(after)}（${describeSide(after)}）`;
     if (!better) return `形勢 ${formatCp(before)} → ${formatCp(after)}（${describeSide(after)}）${note}`;
     // 正解を指したあとの局面も同じ条件で評価する（無理なら指す前の評価で代用）
     let best: Analysis = before;
@@ -386,7 +386,7 @@ export class Judge {
     } finally {
       pos.undo();
     }
-    return `正解 ${moveToKanji(better, 0)} → 形勢 ${formatCp(best)}（${describeSide(best)}）${note}
+    return `正解 ${moveToKanji(better, 0, null, pos)} → 形勢 ${formatCp(best)}（${describeSide(best)}）${note}
 ${playedLine}`;
   }
 
@@ -405,7 +405,7 @@ ${playedLine}`;
         kind: 'mate-missed',
         level: 5,
         headline: '詰みを見逃すな！',
-        why: `${moveToKanji(better, 0)}から後手玉は${before.mate}手で詰んでおった。王手をかけて相手の逃げ道を全部ふさぐ、それが詰みじゃ。`,
+        why: `${moveToKanji(better, 0, null, pos)}から後手玉は${before.mate}手で詰んでおった。王手をかけて相手の逃げ道を全部ふさぐ、それが詰みじゃ。`,
         better,
         evalLine,
       };
@@ -418,7 +418,7 @@ ${playedLine}`;
     const threatKind = threat ? classify(pos, threat, 0) : 'other';
     pos.undo();
     const threatText = threat ? moveToKanji(threat, 1, move) : '';
-    const betterText = better ? `ここは${moveToKanji(better, 0)}じゃ。` : '';
+    const betterText = better ? `ここは${moveToKanji(better, 0, null, pos)}じゃ。` : '';
 
     // 詰まされる
     if (after.mate !== null && after.mate < 0 && -after.mate <= MATE_ALLOWED_MAX && !(before.mate !== null && before.mate < 0)) {
@@ -452,16 +452,16 @@ ${playedLine}`;
     const degree = level === 5 ? '決定的に' : 'はっきり';
     let why: string;
     if (level === 2) {
-      why = better ? `ワシなら${moveToKanji(better, 0)}じゃ。${missed ?? ''}` : '悪くはない。';
+      why = better ? `ワシなら${moveToKanji(better, 0, null, pos)}じゃ。${missed ?? ''}` : '悪くはない。';
     } else if (wasInCheck) {
       why = `王手の受け方が悪い。${consequence}${betterText}`;
     } else if (missed) {
       // 「相手の次の手」より「指すべき手を逃した」ことを先に言う
-      const tail = better && missed.includes(moveToKanji(better, 0)) ? '' : betterText;
+      const tail = better && missed.includes(moveToKanji(better, 0, null, pos)) ? '' : betterText;
       why = `${missed}${consequence ? `しかも${consequence}` : ''}${tail}`;
     } else if (consequence) {
       // 取られる手なら、正解を指せばその駒が助かるかも言う（正解でも取られるままなら今まで通り「ここは▲○○じゃ」）
-      const rescue = hangs && better && savesFromCapture(pos, better) ? `${moveToKanji(better, 0)}なら${PIECE_NAME[hangs]}は取られん。` : betterText;
+      const rescue = hangs && better && savesFromCapture(pos, better) ? `${moveToKanji(better, 0, null, pos)}なら${PIECE_NAME[hangs]}は取られん。` : betterText;
       why = `${consequence}形勢が${degree}悪くなる。${rescue}`;
     } else {
       why = `${PURPOSE_MARK}形勢を${degree}損ねる手じゃ。`;
@@ -492,7 +492,7 @@ ${playedLine}`;
           kind: 'mate-missed',
           level: 5,
           headline: '詰みを見逃すな！',
-          why: `${moveToKanji(mate, 0)}で後手玉は詰んでおった。王手をかけて相手の逃げ道を全部ふさぐ、それが詰みじゃ。`,
+          why: `${moveToKanji(mate, 0, null, pos)}で後手玉は詰んでおった。王手をかけて相手の逃げ道を全部ふさぐ、それが詰みじゃ。`,
           better: mate,
         };
       }
@@ -565,7 +565,7 @@ export function moveNature(pos: Position, m: Move): 'attack' | 'defend' | 'other
 
 // 指すべきだった手（best）が何をする手だったかを説明する。説明できなければ null
 function describeMissed(pos: Position, best: Move, played: Move): string | null {
-  const bestText = moveToKanji(best, 0);
+  const bestText = moveToKanji(best, 0, null, pos);
   // 同じ手で成らなかった
   if (best.from && played.from && best.from.x === played.from.x && best.from.y === played.from.y
     && best.to.x === played.to.x && best.to.y === played.to.y && best.promote && !played.promote) {
@@ -609,7 +609,7 @@ function describeMissed(pos: Position, best: Move, played: Move): string | null 
 // 最善手の狙いを、盤の形から短く言う（「その手は緩い」の代わり）
 function describeBestPurpose(pos: Position, best: Move | null): string {
   if (!best) return 'その手は緩い。';
-  const text = moveToKanji(best, 0);
+  const text = moveToKanji(best, 0, null, pos);
   const nature = moveNature(pos, best);
   const sk = pos.findKing(0);
   const gk = pos.findKing(1);

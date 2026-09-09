@@ -481,9 +481,9 @@ describe('攻めるべきか受けるべきか', () => {
       'G*8h': { cp: -527, bestmove: '6d3g+', pv: ['6d3g+'] },
     }));
     const j = await judge.judge(pos, usiToMove(pos, 'G*8h'));
-    expect(j.verdict?.why.startsWith('受けている場合ではない。▲３五桂打と攻める方が速い。')).toBe(true);
+    expect(j.verdict?.why.startsWith('受けている場合ではない。▲３五桂と攻める方が速い。')).toBe(true);
     expect(j.verdict?.why).toContain('しかもその手は△３七角成と成り込まれる');
-    expect(j.verdict?.why).not.toContain('ここは▲３五桂打じゃ');
+    expect(j.verdict?.why).not.toContain('ここは▲３五桂じゃ');
   });
 });
 

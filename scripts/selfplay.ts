@@ -119,11 +119,11 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
     let m = await playerMove(pos, engine, opening, random, pos.moves.length);
     const before = pos.moves.map(moveToUsi).join(' ');
     const j = await judge.judge(pos, m);
-    const base = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before, move: moveToKanji(m, 0), usi: moveToUsi(m) };
+    const base = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before, move: moveToKanji(m, 0, null, pos), usi: moveToUsi(m) };
     if (j.verdict) {
       const v = j.verdict;
       const redo = v.level >= 4 && random() < 0.5 && v.better !== null;
-      log({ ...base, type: 'verdict', level: v.level, kind: v.kind, headline: v.headline, why: v.why, evalLine: v.evalLine ?? '', better: v.better ? moveToKanji(v.better, 0) : '', redo });
+      log({ ...base, type: 'verdict', level: v.level, kind: v.kind, headline: v.headline, why: v.why, evalLine: v.evalLine ?? '', better: v.better ? moveToKanji(v.better, 0, null, pos) : '', redo });
       if (v.level === 5) counts.scold++;
       else if (v.level === 4) counts.bad++;
       else if (v.level === 3) counts.l3++;
@@ -144,7 +144,7 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
     // 後手（オジジ）
     const om = await ojijiMove(pos, engine, judge, variant.moves, state, random);
     if (!om) { result = 'win'; break; }
-    const obase = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before: pos.moves.map(moveToUsi).join(' '), move: moveToKanji(om, 1), usi: moveToUsi(om) };
+    const obase = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before: pos.moves.map(moveToUsi).join(' '), move: moveToKanji(om, 1, null, pos), usi: moveToUsi(om) };
     pos.apply(om);
     if (pos.isGameOver()) { result = 'lose'; break; }
     const comment = STYLE.planComments?.[planKey(om)];
