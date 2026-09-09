@@ -1,4 +1,4 @@
-// 学習ループ: 難易度（オジジの強さ）、対局ごとの「今日の課題」、成績と昇級。
+// 学習ループ: 難易度（オジジの強さ）、対局ごとの「今日の課題」、成績と昇級、称号と免許。
 // 画面に依存しない純粋なロジック。保存は localStorage だが、無い環境でも動く。
 
 import { Style } from '../style/types';
@@ -57,6 +57,10 @@ export function nextLevel(id: LevelId): Level | null {
   return i >= 0 && i + 1 < LEVELS.length ? LEVELS[i + 1] : null;
 }
 
+// ===== 対局の結果 =====
+// 'draw' は引き分け（千日手・持将棋・手数超過）。対局数には数えるが、勝ち数にも昇級の勝数にも数えない
+export type GameResult = 'win' | 'lose' | 'resign' | 'draw';
+
 // ===== 今日の課題 =====
 // 一局に一つだけ出す。達成の判定は「頷いた形の id」「叱られた回数」「勝敗」から決める
 export interface Task {
@@ -70,7 +74,7 @@ export interface TaskInput {
   scolded: number;
   badMoves: number;
   hints: number;
-  result: 'win' | 'lose' | 'resign';
+  result: GameResult;
   plies: number;
 }
 
@@ -122,18 +126,50 @@ export function pickTask(style: Style, done: ReadonlySet<string>, random: () => 
   return pool[Math.floor(random() * pool.length)];
 }
 
+// ===== 称号と免許 =====
+// 戦法ごとの実績（バッジ）。戦法 5 × 難易度 3 を消化したあとの目標として、
+// 各戦法で「皆伝」を取ると称号が上がる
+export type BadgeId = 'first-win' | 'clean-win' | 'kaiden';
+
+// 表示の順
+export const BADGE_IDS: BadgeId[] = ['first-win', 'clean-win', 'kaiden'];
+
+// 表示用の短い名前
+export const BADGE_LABEL: Record<string, string> = {
+  'first-win': '初勝利',
+  'clean-win': '叱られず勝利',
+  kaiden: '皆伝',
+};
+
+// 取り方（まだ取っていないバッジの説明に使う）
+export const BADGE_CONDITION: Record<string, string> = {
+  'first-win': 'その戦法のオジジに初めて勝つ',
+  'clean-win': '「ばかもーん！」を一度も言わせずに勝つ',
+  kaiden: '師範代のオジジに、叱られず、課題も達成して勝つ',
+};
+
+// 称号。皆伝の数（戦法ごとに最大 1 つ）で決まる
+export const TITLES: { kaiden: number; name: string }[] = [
+  { kaiden: 0, name: '門前の小僧' },
+  { kaiden: 1, name: '通いの弟子' },
+  { kaiden: 3, name: '内弟子' },
+  { kaiden: 5, name: '免許皆伝' },
+];
+
 // ===== 成績と昇級 =====
 export interface StyleRecord {
   games: number;
   wins: number;
   scolded: number;
   tasksDone: string[]; // "styleId:taskId"
+  badges?: string[]; // 取った実績（BadgeId）。古い保存データには無いので省略可
 }
 
 export interface Progress {
   level: LevelId;
   styles: Record<string, StyleRecord>;
   lastStyle?: string; // 前回対局した戦法。タイトルの「前回の設定で始める」と対局設定の初期選択に使う
+  winsAtLevel?: Record<string, number>; // 難易度ごとの勝ち数（昇級の判定用）
 }
 
 const KEY = 'ojiji.progress.v2';
@@ -142,14 +178,34 @@ export function emptyProgress(): Progress {
   return { level: 'apprentice', styles: {} };
 }
 
+function emptyRecord(): StyleRecord {
+  return { games: 0, wins: 0, scolded: 0, tasksDone: [], badges: [] };
+}
+
+// 保存データの戦法ごとの成績を、欠けた欄や壊れた値を既定値で補って整える
+function normalizeRecord(raw: unknown): StyleRecord {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof StyleRecord, unknown>>;
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  return {
+    games: num(r.games),
+    wins: num(r.wins),
+    scolded: num(r.scolded),
+    tasksDone: strings(r.tasksDone),
+    badges: strings(r.badges),
+  };
+}
+
 export function loadProgress(storage: Pick<Storage, 'getItem'> | null = safeStorage()): Progress {
   try {
     const raw = storage?.getItem(KEY);
     if (!raw) return emptyProgress();
     const p = JSON.parse(raw) as Progress;
-    if (!p || typeof p !== 'object' || !p.styles) return emptyProgress();
+    if (!p || typeof p !== 'object' || !p.styles || typeof p.styles !== 'object') return emptyProgress();
     p.level = levelById(p.level).id;
     if (typeof p.lastStyle !== 'string') delete p.lastStyle;
+    if (!p.winsAtLevel || typeof p.winsAtLevel !== 'object') delete p.winsAtLevel;
+    for (const id of Object.keys(p.styles)) p.styles[id] = normalizeRecord(p.styles[id]);
     return p;
   } catch {
     return emptyProgress();
@@ -174,10 +230,11 @@ function safeStorage(): Storage | null {
 
 export interface GameOutcome {
   styleId: string;
-  result: 'win' | 'lose' | 'resign';
+  result: GameResult;
   scolded: number;
   task: Task | null;
   taskDone: boolean;
+  level?: LevelId; // 対局した難易度。省略時は p.level（昇級はこの関数の中でしか起きないので同じ値になる）
 }
 
 export interface Promotion {
@@ -189,8 +246,9 @@ export interface Promotion {
 export const PROMOTE_WINS = 2;
 export const PROMOTE_TASKS = 3;
 
-export function recordGame(p: Progress, o: GameOutcome): { promotion: Promotion | null } {
-  const r = p.styles[o.styleId] ?? { games: 0, wins: 0, scolded: 0, tasksDone: [] };
+// 戻り値: promotion は昇級したとき、newBadges はこの一局で新しく取った実績（表示順）
+export function recordGame(p: Progress, o: GameOutcome): { promotion: Promotion | null; newBadges: string[] } {
+  const r = p.styles[o.styleId] ?? emptyRecord();
   r.games++;
   if (o.result === 'win') r.wins++;
   r.scolded += o.scolded;
@@ -200,21 +258,61 @@ export function recordGame(p: Progress, o: GameOutcome): { promotion: Promotion 
   }
   p.styles[o.styleId] = r;
 
-  const winsAtLevel = (p as Progress & { winsAtLevel?: Record<string, number> });
-  winsAtLevel.winsAtLevel = winsAtLevel.winsAtLevel ?? {};
-  if (o.result === 'win') winsAtLevel.winsAtLevel[p.level] = (winsAtLevel.winsAtLevel[p.level] ?? 0) + 1;
+  // 実績は対局した難易度で判定する（昇級の前）
+  const newBadges = earnBadges(r, o, o.level ?? p.level);
+
+  p.winsAtLevel = p.winsAtLevel ?? {};
+  if (o.result === 'win') p.winsAtLevel[p.level] = (p.winsAtLevel[p.level] ?? 0) + 1;
   const tasksTotal = Object.values(p.styles).reduce((n, s) => n + s.tasksDone.length, 0);
   const next = nextLevel(p.level);
-  if (next && (winsAtLevel.winsAtLevel[p.level] ?? 0) >= PROMOTE_WINS && tasksTotal >= PROMOTE_TASKS * (LEVELS.findIndex((l) => l.id === p.level) + 1)) {
+  if (next && (p.winsAtLevel[p.level] ?? 0) >= PROMOTE_WINS && tasksTotal >= PROMOTE_TASKS * (LEVELS.findIndex((l) => l.id === p.level) + 1)) {
     const from = levelById(p.level);
     p.level = next.id;
-    return { promotion: { from, to: next } };
+    return { promotion: { from, to: next }, newBadges };
   }
-  return { promotion: null };
+  return { promotion: null, newBadges };
+}
+
+// この一局で条件を満たした実績のうち、まだ持っていないものを付けて返す。勝ち以外では何も付かない
+function earnBadges(r: StyleRecord, o: GameOutcome, level: LevelId): string[] {
+  if (o.result !== 'win') return [];
+  const earned: BadgeId[] = ['first-win'];
+  if (o.scolded === 0) earned.push('clean-win');
+  if (o.scolded === 0 && level === 'master' && o.task && o.taskDone) earned.push('kaiden');
+  const badges = (r.badges = r.badges ?? []);
+  const fresh = earned.filter((b) => !badges.includes(b));
+  badges.push(...fresh);
+  return fresh;
 }
 
 export function doneTaskSet(p: Progress): Set<string> {
   const s = new Set<string>();
   for (const r of Object.values(p.styles)) for (const t of r.tasksDone) s.add(t);
   return s;
+}
+
+// 戦法の実績を表示順で返す。未対局や古い保存データなら空
+export function badgesOf(p: Progress, styleId: string): string[] {
+  const have = p.styles[styleId]?.badges ?? [];
+  return BADGE_IDS.filter((id) => have.includes(id));
+}
+
+// 全戦法の合計。kaiden は皆伝を取った戦法の数
+export function totals(p: Progress): { games: number; wins: number; tasks: number; kaiden: number } {
+  const t = { games: 0, wins: 0, tasks: 0, kaiden: 0 };
+  for (const r of Object.values(p.styles)) {
+    t.games += r.games;
+    t.wins += r.wins;
+    t.tasks += r.tasksDone.length;
+    if (r.badges?.includes('kaiden')) t.kaiden++;
+  }
+  return t;
+}
+
+// 称号。皆伝の数で決まる（0: 門前の小僧、1〜2: 通いの弟子、3〜4: 内弟子、5: 免許皆伝）
+export function titleOf(p: Progress): string {
+  const n = totals(p).kaiden;
+  let name = TITLES[0].name;
+  for (const t of TITLES) if (n >= t.kaiden) name = t.name;
+  return name;
 }
