@@ -86,8 +86,8 @@ describe('勝った対局の振り返り', () => {
     const logs = [
       log(23, 86, -113), // 勝率 58 → 40（18 ポイント）
       log(25, 26, -132), // 52 → 38（14 ポイント。勝った対局では足切り以下）
-      log(31, 400, 380, { gap: 600 }), // 勝率 81 で最善を指した。次善なら 400-600 = -200 で勝率 32 に落ちる → 決め手
-      log(37, 500, 480, { gap: 100 }), // 次善でも勝率 81 が残るので決め手ではない
+      log(31, 400, 380, { gap: 600, playedBest: true }), // 勝率 81 で最善を指した。次善なら 400-600 = -200 で勝率 32 に落ちる → 決め手
+      log(37, 500, 480, { gap: 100, playedBest: true }), // 次善でも勝率 81 が残るので決め手ではない
       log(45, 830, 171), // 96 → 65（31 ポイント）
     ];
     const m = keyMoments(logs, 3, won);
@@ -101,7 +101,7 @@ describe('勝った対局の振り返り', () => {
   it('負けた対局では間違いだけを出し、決め手は入れない', () => {
     const logs = [
       log(5, 0, -300),
-      log(29, 400, 380, { gap: 600 }), // 勝った対局なら決め手になる手
+      log(29, 400, 380, { gap: 600, playedBest: true }), // 勝った対局なら決め手になる手
       log(21, -300, -900),
     ];
     const m = keyMoments(logs, 3);
@@ -111,15 +111,16 @@ describe('勝った対局の振り返り', () => {
 
   // 以前は「勝率 92% 超は決め手にしない」だったが、「次善でも勝率 50% を超えて勝ちが残る局面は決め手にしない」に置き換えた
   it('次善でも勝ちが残る局面や、最善を外した手は決め手にしない', () => {
-    expect(keyMoments([log(31, 1500, 1480, { gap: 900 })], 3, won)).toEqual([]); // 次善 600 でも勝率 90
+    expect(keyMoments([log(31, 1500, 1480, { gap: 900, playedBest: true })], 3, won)).toEqual([]); // 次善 600 でも勝率 90
+    // 最善を外した手（playedBest が付かない）。勝率も 16 ポイント落ちているので、どちらの条件でも決め手にはならない
     expect(keyMoments([log(31, 300, 100, { gap: 900 })], 3, won).map((x) => x.kind)).toEqual(['blunder']);
   });
 });
 
 describe('決め手の条件', () => {
   const won = { won: true };
-  // 30 手目、勝率 80% → 79%、次善（377-490 = -113）なら勝率 40%、駒を取らない手
-  const base = log(30, 377, 360, { gap: 490 });
+  // 30 手目、勝率 80% → 79%、次善（377-490 = -113）なら勝率 40%、駒を取らない手、最善を指した手
+  const base = log(30, 377, 360, { gap: 490, playedBest: true });
 
   it('条件に合う手（30 手目、勝率 80% → 79%、次善なら 40%、取らない手）は決め手になる', () => {
     const m = keyMoments([base], 3, won);
@@ -142,7 +143,15 @@ describe('決め手の条件', () => {
 
   it('勝率 58% の局面は決め手にしない（優勢でない）', () => {
     // 86 → 80（勝率 58 → 57）。次善なら -314 で勝率 24 だが、そもそも勝っていない
-    expect(keyMoments([log(30, 86, 80, { gap: 400 })], 3, won)).toEqual([]);
+    expect(keyMoments([log(30, 86, 80, { gap: 400, playedBest: true })], 3, won)).toEqual([]);
+  });
+
+  // 「最善を指した」と言い切る札なので、最善だったと記録で確かめられる手だけに限る。
+  // エンジンが無い環境や、正解が分からないまま指した手は決め手にしない
+  it('最善を指したと記録に無い手は決め手にしない', () => {
+    expect(keyMoments([{ ...base, playedBest: undefined }], 3, won)).toEqual([]);
+    expect(keyMoments([{ ...base, playedBest: false }], 3, won)).toEqual([]);
+    expect(keyMoments([base], 3, won).map((x) => x.kind)).toEqual(['decisive']);
   });
 
   it('序盤 12 手以内は決め手にしない', () => {
@@ -180,7 +189,7 @@ describe('決め手の条件', () => {
   });
 
   it('候補が複数あれば次善との差が最大の手を 1 つだけ入れ、条件に合う手が無ければ 2 枚でも構わない', () => {
-    const bigger = log(40, 377, 360, { gap: 700 }); // 次善なら -323 で勝率 23。base（40%）より差が大きい
+    const bigger = log(40, 377, 360, { gap: 700, playedBest: true }); // 次善なら -323 で勝率 23。base（40%）より差が大きい
     const m = keyMoments([base, bigger, log(20, 600, 0)], 3, won);
     expect(m.map((x) => [x.log.ply, x.kind])).toEqual([[20, 'blunder'], [40, 'decisive']]);
     // 決め手は 1 つだけ。残りは間違い 2 つで、好手は入らない
@@ -192,17 +201,59 @@ describe('決め手の条件', () => {
   });
 });
 
+describe('叱らなかった手と指し直しの記録', () => {
+  it('最善を指した手とヒントの手は「形勢を落とした手」に選ばない', () => {
+    const logs = [
+      log(11, 0, -400, { playedBest: true }), // 最善を指したのに、そのあと評価が下がった手
+      log(13, 0, -400, { hinted: true }), // ヒント通りに指した手
+      log(15, 0, -300, { betterKanji: '▲２六歩' }), // 自分で選んで落とした手
+    ];
+    const m = keyMoments(logs);
+    expect(m.map((x) => x.log.ply)).toEqual([15]);
+    // 勝った対局（足切り 15 ポイント）でも同じ
+    expect(keyMoments(logs, 3, { won: true }).map((x) => x.log.ply)).toEqual([15]);
+  });
+
+  it('最善やヒントの手でも、形勢を上げた手は「好手」に出る', () => {
+    const m = keyMoments([log(11, -400, 0, { playedBest: true, hinted: true })]);
+    expect(m.map((x) => [x.log.ply, x.kind])).toEqual([[11, 'good']]);
+  });
+
+  it('同じ手数の記録が複数あれば、後の（実際に指した）方だけを使う', () => {
+    // 指し直しで消えた手（悪手）と、指し直した後の手が両方残っている場合
+    const m = keyMoments([
+      log(21, 0, -900, { why: '角を取られる', level: 4 }),
+      log(21, 0, -60), // 指し直した手。勝率差は足切り以下
+      log(23, 0, -300, { betterKanji: '▲２六歩' }),
+    ]);
+    expect(m.map((x) => x.log.ply)).toEqual([23]);
+    // 後の記録の方が悪ければ、そちらを出す
+    const redo = keyMoments([log(21, 0, -60), log(21, 0, -900, { why: '角を取られる', level: 4 })]);
+    expect(redo.map((x) => x.log.ply)).toEqual([21]);
+    expect(momentCaption(redo[0])).toBe('角を取られる');
+  });
+});
+
 describe('説明文の差し替え', () => {
   const won = { won: true };
   const light = { level: 2, headline: '良い手じゃな。だがワシならこう打つな。', why: 'ワシなら▲２六歩と受けるな。', betterKanji: '▲２六歩' };
 
-  it('段階 2 の説明は、勝率差 15 以上なら形勢の文に差し替え、優勢だったなら「勝っておったので黙っておったが、」を付ける', () => {
+  // 以前は段階 2 でも「勝っておったので黙っておったが、」を付けていたが、段階 2 は対局中に「ワシならこう打つな」と
+  // 喋っている手なので「黙っておった」は嘘になる。段階 2 専用の前置きに変えた
+  it('段階 2 の説明は、勝率差 15 以上なら形勢の文に差し替え、「ワシならこう打つと言ったが、」を付ける', () => {
     expect(QUIET_SWING).toBe(15);
     const m = keyMoments([log(20, 600, 0, light)], 3, won); // 勝率 90 → 50
-    expect(momentCaption(m[0], won)).toBe('勝っておったので黙っておったが、リードを手放した。▲２六歩が良かった。');
+    expect(momentCaption(m[0], won)).toBe('ワシならこう打つと言ったが、実は大きな損じゃった。リードを手放した。▲２六歩が良かった。');
     const kept = keyMoments([log(20, 830, 171, light)], 3, won); // 96 → 65（優勢は保った）
-    expect(momentCaption(kept[0], won)).toBe('勝っておったので黙っておったが、勝ちを危うくした。▲２六歩が良かった。');
+    expect(momentCaption(kept[0], won)).toBe('ワシならこう打つと言ったが、実は大きな損じゃった。勝ちを危うくした。▲２六歩が良かった。');
     expect(momentLabel(m[0], won)).toBe('ヒヤリとした手');
+  });
+
+  it('同じ局面でも段階 1（無言）と段階 2（喋った）で前置きが違う', () => {
+    const quiet1 = keyMoments([log(20, 600, 0, { level: 1, betterKanji: '▲２六歩' })], 3, won);
+    expect(momentCaption(quiet1[0], won)).toBe('勝っておったので黙っておったが、リードを手放した。▲２六歩が良かった。');
+    const quiet2 = keyMoments([log(20, 600, 0, light)], 3, won);
+    expect(momentCaption(quiet2[0], won)).toBe('ワシならこう打つと言ったが、実は大きな損じゃった。リードを手放した。▲２六歩が良かった。');
   });
 
   it('段階 2 でも勝率差 15 未満なら説明をそのまま使う', () => {
@@ -210,11 +261,16 @@ describe('説明文の差し替え', () => {
     expect(momentCaption(m[0])).toBe('ワシなら▲２六歩と受けるな。');
   });
 
-  it('段階 2 で互角から落とした手は前置き無しで形勢の文', () => {
+  // 以前は互角からの手には前置きを付けなかったが、段階 2 の前置きは「言ったのに損だった」という話なので形勢によらず付ける。
+  // 「勝っておったので黙っておったが、」（段階 1）だけが優勢のときの断りのまま
+  it('段階 2 の前置きは互角から落とした手にも付く', () => {
     const m = keyMoments([log(20, 86, -113, light)], 3, won); // 58 → 40（18 ポイント）
-    expect(momentCaption(m[0], won)).toBe('互角の中で少し損をした。▲２六歩が良かった。');
+    expect(momentCaption(m[0], won)).toBe('ワシならこう打つと言ったが、実は大きな損じゃった。互角の中で少し損をした。▲２六歩が良かった。');
     const lost = keyMoments([log(20, 0, -400, light)]); // 50 → 24
-    expect(momentCaption(lost[0])).toBe('ここで形勢が傾いた。▲２六歩が良かった。');
+    expect(momentCaption(lost[0])).toBe('ワシならこう打つと言ったが、実は大きな損じゃった。ここで形勢が傾いた。▲２六歩が良かった。');
+    // 段階 1 で互角から落とした手は前置き無し
+    const silent = keyMoments([log(20, 0, -400, { level: 1, betterKanji: '▲２六歩' })]);
+    expect(momentCaption(silent[0])).toBe('ここで形勢が傾いた。▲２六歩が良かった。');
   });
 
   it('段階 3 以上の説明はそのまま使う', () => {

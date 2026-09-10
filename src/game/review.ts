@@ -7,6 +7,9 @@
 // 「優勢の局面で、次善を指すと勝ちが消えていたところを、最善を指した」手。
 // ただし取り返しや王手の逃げ方のように、他に指しようがない手は、次善との差が大きくても決め手と呼ばない
 // （「ここを間違えると勝ちが消えておった」が嘘になる）。条件に合う手が無ければ決め手は出さない。
+//
+// 対局中に叱らなかった手は振り返りでも責めない。最善を指した手（playedBest）とヒントの手（hinted）は、
+// あとで評価が下がっても「形勢を落とした手」に選ばない。逆に決め手は playedBest が付いた手だけに限る。
 
 export interface MoveLog {
   ply: number; // 何手目（1 始まり、プレイヤーの手）
@@ -21,6 +24,8 @@ export interface MoveLog {
   inCheck?: boolean; // 指す前に王手を受けていた
   legalCount?: number; // 指す前の合法手の数
   depth?: number | null; // 判定の読みの深さ（エンジンが無ければ null）
+  playedBest?: boolean; // エンジンの最善手をそのまま指した
+  hinted?: boolean; // ヒントで示された手を指した
   level: number; // 反応の段階（1 = 何もなし）
   headline: string; // オジジの反応の見出し（無ければ空）
   why: string; // 説明（無ければ空）
@@ -72,8 +77,10 @@ export function standing(win: number): Standing {
 
 // 決め手の候補なら「最善と次善の勝率差（ポイント）」を返し、違えば null。
 // 優勢の局面で最善（から 3 ポイント以内）を指し、次善なら勝率 50% 以下に落ちていた手。
-// 序盤、駒を取る手、取り返し、王手の逃げ方が少ない手は、他に選びようが無いので決め手にしない
+// 序盤、駒を取る手、取り返し、王手の逃げ方が少ない手は、他に選びようが無いので決め手にしない。
+// 「最善を指した」と言い切る札なので、最善だったと記録で確かめられる手（playedBest）だけに限る
 function decisiveGap(log: MoveLog, before: number, winBefore: number, winAfter: number): number | null {
+  if (log.playedBest !== true) return null;
   if (typeof log.gap !== 'number' || !Number.isFinite(log.gap)) return null;
   if (log.ply <= DECISIVE_MIN_PLY) return null;
   if (log.capture === true || log.recapture === true) return null;
@@ -85,6 +92,14 @@ function decisiveGap(log: MoveLog, before: number, winBefore: number, winAfter: 
   return winBefore - winSecond;
 }
 
+// 同じ手数の記録が複数あるときは、後の（実際に指した）方だけを残す。
+// 指し直しや待ったで消えた手を振り返りに出さないため（画面側でも記録を消すが、二重の守り）
+function lastPerPly(logs: MoveLog[]): MoveLog[] {
+  const byPly = new Map<number, MoveLog>();
+  for (const log of logs) byPly.set(log.ply, log);
+  return [...byPly.values()];
+}
+
 // 最も大きく動いた手から最大 count 件。悪化した手を優先し、残りを好転した手で埋める（どちらも足切りを超えたものだけ）。
 // 勝った対局は、決め手 1 つ（あれば） → 間違い（最大 2 つ、足切り高め）→ 好手 の順。負けた対局に決め手は無い
 export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {}): KeyMoment[] {
@@ -92,7 +107,7 @@ export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {})
   const minSwing = won ? MIN_SWING_WON : MIN_SWING;
   const scored: KeyMoment[] = [];
   let decisive: KeyMoment | null = null;
-  for (const log of logs) {
+  for (const log of lastPerPly(logs)) {
     if (log.before === null || log.after === null) continue;
     const winBefore = winProb(log.before);
     const winAfter = winProb(log.after);
@@ -105,7 +120,10 @@ export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {})
       }
     }
     if (Math.abs(swing) < minSwing) continue;
-    scored.push({ log, kind: swing > 0 ? 'blunder' : 'good', swing, winBefore, winAfter });
+    const kind: MomentKind = swing > 0 ? 'blunder' : 'good';
+    // 最善を指した手とヒントの手は、対局中に叱っていないので、あとで評価が下がっても責めない
+    if (kind === 'blunder' && (log.playedBest === true || log.hinted === true)) continue;
+    scored.push({ log, kind, swing, winBefore, winAfter });
   }
   // 同程度の差なら早い手が先（差を TIE_STEP 刻みに丸めてから比べる）
   const bucket = (m: KeyMoment) => Math.floor(Math.abs(m.swing) / TIE_STEP);
@@ -130,7 +148,8 @@ export function keyMoments(logs: MoveLog[], count = 3, opts: ReviewOptions = {})
 
 // 振り返りの一言（数字を並べず、何が起きたかを短く）。指す前と後の形勢で文を変える。
 // 対局中の説明（why）は段階 3 以上ならそのまま使う。段階 2 以下は「ワシならこう打つな」程度の軽い反応か無言なので、
-// 勝率を大きく落とした手にはその説明を使わず、形勢の文で言い直す（優勢だったなら「黙っておった」と断ってから）
+// 勝率を大きく落とした手にはその説明を使わず、形勢の文で言い直す。前置きは対局中に何と言ったかで変える。
+// 段階 1（無言）で優勢だったなら「勝っておったので黙っておったが、」、段階 2（軽く言った）なら「実は大きな損じゃった。」
 export function momentCaption(m: KeyMoment, opts: ReviewOptions = {}): string {
   const from = standing(m.winBefore);
   const to = standing(m.winAfter);
@@ -142,15 +161,17 @@ export function momentCaption(m: KeyMoment, opts: ReviewOptions = {}): string {
   }
   const quiet = m.log.level <= 2 && m.swing >= QUIET_SWING;
   if (m.log.why && !quiet) return m.log.why;
-  const head = quiet && from === 'winning' ? '勝っておったので黙っておったが、' : '';
+  let head = '';
+  if (quiet && m.log.level === 2) head = 'ワシならこう打つと言ったが、実は大きな損じゃった。';
+  else if (quiet && from === 'winning') head = '勝っておったので黙っておったが、';
   const better = m.log.betterKanji ? `${m.log.betterKanji}が良かった。` : '';
   if (from === 'winning' && to === 'winning') return m.swing >= 20 ? `${head}勝ちを危うくした。${better}` : `${head}優勢は保ったが、少し緩んだ。${better}`;
   if (from === 'winning') return `${head}リードを手放した。${better}`;
-  if (from === 'even' && to === 'even') return `互角の中で少し損をした。${better}`;
-  if (from === 'even') return `ここで形勢が傾いた。${better}`;
-  if (from === 'losing' && to === 'lost') return `苦しかったが、ここで決まった。${better}`;
-  if (opts.won) return `危ない手じゃった。${better}`;
-  return `ここで差が広がった。${better}`;
+  if (from === 'even' && to === 'even') return `${head}互角の中で少し損をした。${better}`;
+  if (from === 'even') return `${head}ここで形勢が傾いた。${better}`;
+  if (from === 'losing' && to === 'lost') return `${head}苦しかったが、ここで決まった。${better}`;
+  if (opts.won) return `${head}危ない手じゃった。${better}`;
+  return `${head}ここで差が広がった。${better}`;
 }
 
 // カードや拡大表示の札に出す言葉
