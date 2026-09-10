@@ -46,7 +46,11 @@ export function listOutputs() {
     { file: 'public/icons/icon-512-maskable.png', size: 512, kind: 'maskable' },
     { file: 'public/icons/apple-touch-icon-180.png', size: 180, kind: 'square' },
     { file: 'public/icons/icon-512-square.png', size: 512, kind: 'square' },
+    { file: 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png', size: 1024, kind: 'square' },
   ];
+  for (const suffix of ['', '-1', '-2']) {
+    list.push({ file: `ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732${suffix}.png`, size: 2732, kind: 'splash' });
+  }
   for (const [density, scale] of Object.entries(DENSITIES)) {
     const dir = `android/app/src/main/res/mipmap-${density}`;
     list.push({ file: `${dir}/ic_launcher.png`, size: Math.round(LAUNCHER_DP * scale), kind: 'launcher' });
@@ -137,6 +141,9 @@ export function composeSvg(kind, size, ctx) {
     case 'square':
       body = square(ctx.fill) + icon(size);
       break;
+    case 'splash':
+      body = square(ctx.webBackdrop) + icon(size * 0.18);
+      break;
     case 'maskable':
       body = square(ctx.webBackdrop) + icon(fitSide(size * MASKABLE_SAFE_RADIUS, ctx.corner) * SAFE_MARGIN);
       break;
@@ -179,6 +186,6 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
 }
 
 /**
- * @typedef {'plain' | 'maskable' | 'square' | 'launcher' | 'launcher-round' | 'foreground'} IconKind
+ * @typedef {'plain' | 'maskable' | 'square' | 'splash' | 'launcher' | 'launcher-round' | 'foreground'} IconKind
  * @typedef {{ viewBox: string, inner: string, fill: string, corner: number, webBackdrop: string, androidBackdrop: string }} IconContext
  */

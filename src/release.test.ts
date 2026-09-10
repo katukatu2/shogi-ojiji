@@ -20,7 +20,7 @@ describe('プライバシーポリシー（public/privacy.html）', () => {
     expect(html).toContain('広告を表示しません');
     expect(html).toContain('解析ツールを組み込んでいません');
     expect(html).toContain('README');
-    expect(html).toContain('（公開先 URL）');
+    expect(html).not.toContain('href="（公開先 URL）"');
   });
 
   it('外部の CSS・スクリプトを読まず、アプリへ戻るリンクがある', () => {
@@ -54,7 +54,7 @@ describe('ストア掲載文（docs/store/listing.md）', () => {
     expect(md).toContain('無料効果音で遊ぼう！（小森平）');
     expect(md).toContain('https://taira-komori.net/');
     expect(md).toContain('## GPL に基づくソース公開先');
-    expect(md).toContain('（公開先 URL）');
+    expect(md).toMatch(/- ソース公開先: (?:https:\/\/\S+|（公開先 URL）)/);
     expect(md).toContain('## 対象年齢とカテゴリ');
     expect(md).toMatch(/- 対象ユーザー: /);
     expect(md).toMatch(/- カテゴリ: /);

@@ -8,7 +8,7 @@ test.describe('画面の動線', () => {
   test('タイトル → 戦法・強さを変える → 対局設定で棒銀・見習いを選ぶ → 対局画面', async ({ page }) => {
     // 2 回目以降のタイトル（前回は矢倉）
     await openWithProgress(page, savedProgress('yagura'));
-    await expect(page.getByRole('heading', { name: '将棋オジジの定石指南（仮）' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '将棋オジジの定石指南' })).toBeVisible();
     const quick = page.getByRole('button', { name: '前回の設定で始める' });
     await expect(quick).toContainText('矢倉・見習い');
 

@@ -13,5 +13,5 @@ export default defineConfig({
   server: { headers: isolationHeaders },
   preview: { headers: isolationHeaders },
   // Playwright の E2E（tests/e2e/*.spec.ts）は vitest で走らせない
-  test: { environment: 'node', testTimeout: 20000, exclude: [...configDefaults.exclude, 'tests/e2e/**', '**/.claude/**'] },
+  test: { environment: 'node', testTimeout: 20000, exclude: [...configDefaults.exclude, 'tests/**', '**/.claude/**'] },
 });

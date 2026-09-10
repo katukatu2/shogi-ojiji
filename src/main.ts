@@ -1,31 +1,29 @@
+import { renderTitle } from './ui/title';
+import { renderSettings } from './ui/settings';
+import type { Game } from './game/session';
+import { renderResult } from './ui/results';
+import { renderMoment } from './ui/review';
 import { Position } from './engine/position';
 import { Move, HandPiece, HAND_ORDER, PIECE_KANJI, PIECE_NAME, PIECE_VALUE, Sq, sqEq, Color } from './engine/types';
 import { moveToKanji, moveToUsi, sqToKanji } from './engine/notation';
-import { chooseMove } from './ai/search';
+import { chooseLocalMove } from './ai/local';
 import { Engine, engineSupported, browserEngineFactory, Analysis } from './ai/engine';
-import { Judge, JudgeState, Verdict, Praise, Judgement, safeMove, bestCaptureGain, SHALLOW_DEPTH } from './style/judge';
-import { Style, PlanVariant } from './style/types';
-import { STYLES as ALL_STYLES, findStyle } from './style/index';
-import { formationOf } from './game/formation';
-import { choosePlanMove, planApplies, planKey, PlanState } from './style/plan';
+import { Judge, Verdict, Praise, Judgement, safeMove, bestCaptureGain } from './style/judge';
+import { Style } from './style/types';
+import { choosePlanMove, planApplies, planKey } from './style/plan';
 import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
 import {
-  LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion, GameResult,
-  titleOf, totals, badgesOf, BADGE_IDS, BADGE_LABEL, BADGE_CONDITION, promotionLine, KAIDEN_CONDITION,
+  loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Promotion, GameResult, levelById,
 } from './game/progress';
-import { keyMoments, momentCaption, momentLabel, MoveLog, KeyMoment, winProb } from './game/review';
-import { miniBoard, positionAfter } from './ui/miniboard';
+import { KeyMoment } from './game/review';
 import { playThunder, playPiece, stopSfx, setMuted, isMuted, warmUp, sfxElementForDebug, pieceElementForDebug } from './ui/audio';
+import { el } from './ui/dom';
+import { ScreenHistory, ScreenName } from './ui/navigation';
 
 // ソースコードの公開先。決まったら URL に差し替える（URL らしい文字列ならクレジット欄でリンクになる）
 const SOURCE_URL = '（公開先 URL）';
 
-const STYLES: { style: Style | null; name: string; desc: string }[] = ALL_STYLES.map((s) => ({
-  style: s,
-  name: s.name,
-  desc: s.description,
-}));
 
 const PROMOTED = new Set(['TO', 'NY', 'NK', 'NG', 'UM', 'RY']);
 const FILE_LABELS = ['９', '８', '７', '６', '５', '４', '３', '２', '１'];
@@ -35,29 +33,6 @@ const RANK_LABELS = ['一', '二', '三', '四', '五', '六', '七', '八', '�
 // 対局の結果。'draw' は千日手・持将棋・手数上限の引き分け
 type Result = GameResult;
 
-interface Game {
-  style: Style;
-  pos: Position;
-  judge: Judge;
-  plan: PlanState;
-  variant: PlanVariant; // 今局のオジジの組み方
-  matta: number; // 待ったの回数
-  scolded: number; // 段階 5「ばかもーん！」の回数
-  badMoves: number; // 段階 4「それは悪手じゃろう」の回数
-  hints: number; // ヒントを使った回数
-  learned: Praise[];
-  lastWhisper: number; // 最後に狙いをつぶやいた手数
-  lastCheckMutter: number; // 最後に「王手じゃ」と言った手数
-  lastMove: Move | null;
-  lastMoveKanji: string; // 最終手の表記。指す前の局面で作る（「打」は同種の駒が動けるときだけ付くので、指した後では決められない）
-  lastCaptureSq: Sq | null; // 直前のオジジの手が駒を取った地点（取っていなければ null）。プレイヤーの「取り返し」の記録に使う
-  result: Result | null;
-  busy: boolean; // オジジの思考中・演出中
-  level: Level; // 難易度（オジジの強さ）
-  task: Task; // 今日の課題
-  logs: MoveLog[]; // 振り返り用の手の記録
-  judgeStates: JudgeState[]; // 各手を指す前の Judge の記憶（待ったで戻すため。手が確定するたびに 1 つ積む）
-}
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
@@ -145,7 +120,7 @@ function showEngineNotice(): void {
   engineNoticeShown = true;
   const box = el('div', 'engine-notice');
   box.append(el('b', '', '将棋エンジンが使えない環境です'));
-  box.append(el('p', '', 'このブラウザでは形勢判定のエンジンが動かないため、駒損と一手詰めだけを見る簡易判定で進めます。最新の Chrome / Edge / Firefox、または Android アプリ版なら本来の判定が使えます。'));
+  box.append(el('p', '', 'この環境では形勢判定のエンジンが動かないため、駒損と一手詰めだけを見る簡易判定で進めます。対応する端末・ブラウザで開くと、より詳しい判定を利用できます。'));
   const ok = el('button', 'btn primary', 'わかった');
   ok.addEventListener('click', () => box.remove());
   box.append(ok);
@@ -174,43 +149,13 @@ let hintedUsi: string | null = null;
 let legalCache: Move[] = [];
 let nodTimer: number | undefined;
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-
 // ===== 画面遷移と「戻る」 =====
 // 画面は タイトル(0) → 対局設定(1) → 対局(2) の深さで履歴に積む。
 // ブラウザやスマートフォンの「戻る」は popstate で受け、画面ごとの規則で処理する
 // （設定→タイトル、対局中→確認してからタイトル、結果→タイトル）。Capacitor の Android は WebView が戻れる間は
 // 戻る操作を WebView に渡すので、同じ道を通る。
 // アプリ内のボタンで浅い画面へ行くときは、その分だけ履歴を戻し、そのとき届く popstate は無視する。
-type ScreenName = 'title' | 'settings' | 'game';
-const SCREEN_DEPTH: Record<ScreenName, number> = { title: 0, settings: 1, game: 2 };
-let screen: ScreenName = 'title';
-let depth = 0; // 積んである履歴の数
-let ignorePops = 0; // 自分で戻した分の popstate を読み飛ばす
-
-function goToScreen(name: ScreenName): void {
-  const want = SCREEN_DEPTH[name];
-  screen = name;
-  if (want > depth) {
-    for (; depth < want; depth++) history.pushState({ ojiji: depth + 1 }, '');
-  } else if (want < depth) {
-    ignorePops += depth - want;
-    history.go(want - depth);
-    depth = want;
-  }
-}
-
-window.addEventListener('popstate', () => {
-  if (ignorePops > 0) {
-    ignorePops--;
-    return;
-  }
-  depth = Math.max(0, depth - 1);
+const navigation = new ScreenHistory((screen) => {
   if (screen === 'settings') {
     showTitle();
     return;
@@ -223,7 +168,10 @@ window.addEventListener('popstate', () => {
     }
     showTitle();
   }
+  if (screen === 'title') goToScreen('title');
 });
+
+function goToScreen(name: ScreenName): void { navigation.go(name); }
 
 // ===== タイトル =====
 // タイトルは、オジジ・題名・一言・ボタン・遊び方だけ。強さと戦法は「対局設定」で選ぶ。
@@ -232,97 +180,11 @@ function showTitle(): void {
   stopSfx();
   game = null;
   goToScreen('title');
-  app.innerHTML = '';
-  const s = el('div', 'title-screen');
-  // タイトルだけは全身。体は静止画（public/raizo/body.webp）で、その上に顔のリグを重ねる
-  const face = el('div', 'face full');
-  faceInto(face, 'normal');
-  if (rig.available) {
-    const body = new Image();
-    body.className = 'body';
-    body.alt = '';
-    body.decoding = 'async';
-    body.src = 'raizo/body.webp';
-    // 体の画像が読めない環境では、体の分の空きを残さず顔だけにする
-    body.addEventListener('error', () => {
-      body.remove();
-      face.classList.remove('full');
-    });
-    face.prepend(body);
-  }
-  rig.settle('idle');
-  s.append(face);
-  s.append(el('h1', '', '将棋オジジの定石指南（仮）'));
-  s.append(el('p', 'sub', 'オジジの得意戦法を相手に、自由に指す。本当に悪い手だけ叱られる。'));
-
-  const actions = el('div', 'title-actions');
-  const last = progress.lastStyle ? findStyle(progress.lastStyle) : undefined;
-  if (last) {
-    const quick = el('button', 'btn primary big');
-    quick.append(document.createTextNode('前回の設定で始める'));
-    quick.append(el('small', '', `${last.name}・${levelById(progress.level).name}`));
-    quick.addEventListener('click', () => {
-      warmUp();
-      startGame(last);
-    });
-    const change = el('button', 'btn', '戦法・強さを変える');
-    change.addEventListener('click', showSettings);
-    actions.append(quick, change);
-  } else {
-    const start = el('button', 'btn primary big', 'はじめる');
-    start.addEventListener('click', showSettings);
-    actions.append(start);
-  }
-  s.append(actions);
-
-  // 称号と通算。皆伝（戦法ごとに 1 つ）の数で称号が上がる
-  const t = totals(progress);
-  s.append(el('div', 'rank', `称号: ${titleOf(progress)}　${t.wins}勝 ${t.games}局・皆伝 ${t.kaiden}/${ALL_STYLES.length}`));
-  if (!canSaveProgress()) s.append(el('div', 'rank warn', 'この端末では成績を保存できない'));
-
-  // 遊び方（折りたたみ。初回に一度読むもの）
-  const how = el('details', 'howto');
-  how.append(el('summary', '', '遊び方'));
-  const ul = el('ul');
-  for (const t of [
-    'オジジは選んだ戦法で囲ってくる。あなたは先手で、好きなように指してよい。',
-    '手の良し悪しはオジジの反応で分かる。無言の頷き ＞ 「良い手じゃな」 ＞ 「むう…」 ＞ 「それは悪手じゃろう」 ＞ 「ばかもーん！」。下の二つは指し直せる。',
-    '判定は将棋エンジン（やねうら王）。勝っているうちは細かいことを言わず、本当に形勢が崩れる手だけ止める。',
-    '「ヒント」でオジジならどう指すかを見られる。「待った」で一組戻せる。',
-    '駒をタップして選び、行き先をタップ。持ち駒は下の列から。',
-  ]) ul.append(el('li', '', t));
-  how.append(ul);
-  s.append(how);
-  const credit = el('p', 'credit');
-  credit.append(document.createTextNode('将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite'));
-  credit.append(el('br'));
-  credit.append(document.createTextNode('駒音: 無料効果音で遊ぼう！（小森平）　'));
-  const link = el('a', '', 'https://taira-komori.net/');
-  link.setAttribute('href', 'https://taira-komori.net/');
-  link.setAttribute('target', '_blank');
-  link.setAttribute('rel', 'noopener');
-  credit.append(link);
-  // ライセンスとソースの公開先、プライバシーポリシー（public/privacy.html）
-  credit.append(el('br'));
-  credit.append(document.createTextNode('このアプリは GPLv3 で公開しています。'));
-  credit.append(el('br'));
-  credit.append(document.createTextNode('ソースコード（'));
-  if (/^https?:\/\//.test(SOURCE_URL)) {
-    const src = el('a', '', SOURCE_URL);
-    src.setAttribute('href', SOURCE_URL);
-    src.setAttribute('target', '_blank');
-    src.setAttribute('rel', 'noopener');
-    credit.append(src);
-  } else {
-    credit.append(document.createTextNode(SOURCE_URL)); // 公開先が決まるまでは文字のまま
-  }
-  credit.append(document.createTextNode('）／ '));
-  const privacy = el('a', '', 'プライバシーポリシー');
-  privacy.setAttribute('href', './privacy.html');
-  credit.append(privacy);
-  s.append(credit);
-
-  app.append(s);
+  app.replaceChildren(renderTitle({
+    progress, rig, canSave: canSaveProgress(), sourceUrl: SOURCE_URL, faceInto,
+    onStart: (style) => { warmUp(); startGame(style); },
+    onSettings: showSettings,
+  }));
   ensureEngine();
 }
 
@@ -335,115 +197,13 @@ function showSettings(): void {
   stopSfx();
   game = null;
   goToScreen('settings');
-  app.innerHTML = '';
-  const s = el('div', 'settings-screen');
-
-  const head = el('div', 'settings-head');
-  const back = el('button', 'back', '‹ タイトル');
-  back.addEventListener('click', showTitle);
-  head.append(back, el('h2', '', '対局設定'), el('span'));
-  s.append(head);
-
-  // 強さ
-  const levelBox = el('div', 'level-box');
-  const renderLevels = (): void => {
-    levelBox.innerHTML = '';
-    levelBox.append(el('div', 'level-title', 'オジジの強さ'));
-    const row = el('div', 'level-row');
-    for (const lv of LEVELS) {
-      const b = el('button', 'level-btn' + (lv.id === progress.level ? ' on' : ''), lv.name);
-      b.addEventListener('click', () => {
-        progress.level = lv.id;
-        saveProgress(progress);
-        renderLevels();
-        renderFoot();
-      });
-      row.append(b);
-    }
-    levelBox.append(row);
-    levelBox.append(el('div', 'level-desc', levelById(progress.level).description));
-    // 昇級までに何が要るか（師範代なら上は無い）。強さは今まで通り自由に選べる
-    levelBox.append(el('div', 'level-next', promotionLine(progress) ?? '師範代が最高じゃ'));
-  };
-  s.append(levelBox);
-
-  // 戦法
-  const done = doneTaskSet(progress);
-  if (!pendingStyleId || !findStyle(pendingStyleId)) {
-    pendingStyleId = progress.lastStyle && findStyle(progress.lastStyle) ? progress.lastStyle : ALL_STYLES[0].id;
-  }
-  const selected = (): Style => findStyle(pendingStyleId!) ?? ALL_STYLES[0];
-  s.append(el('div', 'section-title', 'オジジの戦法'));
-  const list = el('div', 'joseki-list');
-  const rows = new Map<string, HTMLElement>();
-  for (const j of STYLES) {
-    if (!j.style) continue;
-    const style = j.style;
-    const b = el('button', 'joseki-btn');
-    const rec = progress.styles[style.id];
-    const taskCount = [...done].filter((k) => k.startsWith(style.id + ':')).length;
-    const recText = rec && rec.games > 0
-      ? `<em>${rec.wins}勝 ${rec.games}局</em>${rec.scolded > 0 ? `<em>ばかもん ${rec.scolded}回</em>` : `<em>課題 ${taskCount}</em>`}`
-      : '<em>未対局</em>';
-    // 取った免状（初勝利・叱られず勝利・皆伝）は小さな札で並べる。無ければ何も出さない
-    const badges = badgesOf(progress, style.id);
-    const badgeText = badges.length > 0 ? `<span class="badges">${badges.map((id) => `<em class="badge">${BADGE_LABEL[id]}</em>`).join('')}</span>` : '';
-    b.innerHTML = `<span class="jn"><b>${j.name}</b><span class="jd">${j.desc}</span></span><span class="jr">${recText}${badgeText}</span>`;
-    b.addEventListener('click', () => {
-      pendingStyleId = style.id;
-      for (const [id, r] of rows) r.classList.toggle('on', id === style.id);
-      renderPreview();
-      renderFoot();
-      preview.scrollIntoView({ block: 'nearest' }); // 囲いと課題が見える位置まで
-    });
-    rows.set(style.id, b);
-    list.append(b);
-  }
-  s.append(list);
-
-  // 選んだ戦法の囲い・成績・次の課題
-  const preview = el('div', 'preview');
-  const renderPreview = (): void => {
-    const style = selected();
-    preview.innerHTML = '';
-    preview.append(miniBoard(formationOf(style)));
-    const text = el('div', 'ptext');
-    text.append(el('b', '', `${style.name}の駒組み`));
-    text.append(el('div', '', style.plans[0]?.name ? `まずは${style.plans[0].name}。対局ごとに形を変えてくる。` : ''));
-    const rec = progress.styles[style.id];
-    text.append(el('div', 'pline', rec && rec.games > 0 ? `成績: ${rec.wins}勝 ${rec.games}局・ばかもん ${rec.scolded}回` : '成績: まだ指していない'));
-    // 課題は対局数を種にして選ぶ（startGame と同じ計算。ここで見せた課題がそのまま対局に出る）
-    text.append(el('div', 'pline', `次の課題: ${pickTask(style, done, rec?.games ?? 0).text}`));
-    // 次に取れる免状の条件（全部取っていれば出さない）
-    const have = badgesOf(progress, style.id);
-    const nextBadge = BADGE_IDS.find((id) => !have.includes(id) && id !== 'kaiden');
-    if (nextBadge) text.append(el('div', 'pline', `次の免状: ${BADGE_CONDITION[nextBadge]}`));
-    // 皆伝は最後の目標なので、初勝利や叱られず勝利を取る前からずっと見せておく
-    if (!have.includes('kaiden')) text.append(el('div', 'pline', `皆伝: ${KAIDEN_CONDITION}`));
-    preview.append(text);
-  };
-  s.append(preview);
-
-  // 下に固定の開始ボタン
-  const foot = el('div', 'settings-foot');
-  const go = el('button', 'btn primary big');
-  const renderFoot = (): void => {
-    go.innerHTML = '';
-    go.append(document.createTextNode('この設定で対局'));
-    go.append(el('small', '', `${selected().name}・${levelById(progress.level).name}`));
-  };
-  go.addEventListener('click', () => {
-    warmUp();
-    startGame(selected());
-  });
-  foot.append(go);
-  s.append(foot);
-
-  renderLevels();
-  for (const [id, r] of rows) r.classList.toggle('on', id === pendingStyleId);
-  renderPreview();
-  renderFoot();
-  app.append(s);
+  app.replaceChildren(renderSettings({
+    progress, selectedStyleId: pendingStyleId,
+    onSelectStyle: (id) => { pendingStyleId = id; },
+    onProgressChange: () => saveProgress(progress),
+    onTitle: showTitle,
+    onStart: (style) => { warmUp(); startGame(style); },
+  }));
   ensureEngine();
 }
 
@@ -951,8 +711,8 @@ async function npcMove(): Promise<void> {
     console.warn('npc move failed', err);
     checkEngineFailures();
   }
-  // 簡易 AI はメインスレッドで動くので、待たせすぎないよう時間を切る
-  if (!m) m = chooseMove(pos, { depth: 2, timeMs: 300, noise: 0.5 });
+  if (!m) m = await chooseLocalMove(pos);
+  if (game !== g || g.result) return;
   g.busy = false;
   if (!m) {
     endGame('win');
@@ -1265,155 +1025,25 @@ function endGame(result: Result, reason?: string): void {
 
 function showResult(result: Result): void {
   if (!game) return;
-  resultEl.innerHTML = '';
-  const panel = el('div', 'panel result');
-  const titles: Record<Result, string> = {
-    win: game.style.winLine,
-    lose: game.style.loseLine,
-    resign: '投了か。潔いのは悪くない。',
-    draw: '引き分けか。仕切り直しじゃ。',
-  };
-  const face = el('div', 'face');
-  faceInto(face, result === 'win' ? 'shocked' : 'normal');
+  const g = game;
   nodEl.hidden = true;
   toastSerial++;
-  // 勝ち負けの反応は endGame で鳴らしてある（ここで鳴らすと二重になる）
-  panel.append(face);
-  panel.append(el('h2', '', titles[result]));
-  panel.append(el('p', 'oneword', closingWord(game, result)));
-  const score = el('div', 'score');
-  score.textContent = `ばかもん ${game.scolded} ／ 悪手 ${game.badMoves} ／ ヒント ${game.hints} ／ 待った ${game.matta}`;
-  panel.append(score);
-
-  // 今日の課題
-  const task = el('div', 'task-result' + (lastOutcome.taskDone ? ' done' : ''));
-  task.textContent = `${lastOutcome.taskDone ? '課題達成' : '課題は次回'}: ${game.task.text}`;
-  panel.append(task);
-  if (lastOutcome.promotion) {
-    panel.append(el('div', 'promotion', `昇級じゃ。次から「${lastOutcome.promotion.to.name}」のオジジと指せ。`));
-  }
-  // この一局で取った免状。皆伝なら称号も変わるので添える
-  for (const b of lastOutcome.newBadges) {
-    const line = el('div', 'badge-new', `免状じゃ。「${BADGE_LABEL[b]}」`);
-    if (b === 'kaiden') line.append(el('small', '', `称号: ${titleOf(progress)}`));
-    panel.append(line);
-  }
-
-  // 振り返り: 形勢が最も動いた 3 手（勝った対局は決め手 1 つと、ヒヤリとした手を最大 2 つ）
-  const reviewOpts = { won: result === 'win' };
-  const moments = keyMoments(game.logs, 3, reviewOpts);
-  if (moments.length > 0) {
-    const h3 = el('h3', '', '今日の 3 手');
-    h3.append(el('small', '', 'タップで拡大'));
-    panel.append(h3);
-    const row = el('div', 'moments');
-    moments.forEach((mo, i) => {
-      const card = el('button', 'moment' + (mo.kind === 'good' || mo.kind === 'decisive' ? ' good' : ''));
-      const pos = positionAfter(mo.log.movesBefore);
-      const played = safeMove(pos, mo.log.usi);
-      card.append(miniBoard(pos, played));
-      const suffix = mo.kind === 'blunder' ? '' : `（${momentLabel(mo, reviewOpts)}）`;
-      card.append(el('div', 'moment-move', `${mo.log.ply}手目 ${mo.log.kanji}${suffix}`));
-      card.append(el('div', 'moment-text', momentCaption(mo, reviewOpts)));
-      card.addEventListener('click', () => showMoment(moments, i, false, reviewOpts));
-      row.append(card);
-    });
-    panel.append(row);
-  }
-
-  // 対局後の動線: 同じ設定で再戦が主。戦法を変えるなら設定へ、タイトルは明示したときだけ
-  const row = el('div', 'btn-row stack');
-  const again = el('button', 'btn primary', '同じ設定でもう一局');
-  const change = el('button', 'btn', '戦法を変える');
-  const title = el('button', 'btn', 'タイトルへ');
-  again.addEventListener('click', () => startGame(game!.style));
-  change.addEventListener('click', showSettings);
-  title.addEventListener('click', showTitle);
-  row.append(again, change, title);
-  panel.append(row);
-  resultEl.append(panel);
+  resultEl.replaceChildren(renderResult({
+    game: g, result, progress, lastOutcome, faceInto,
+    onReplay: () => startGame(g.style), onChange: showSettings, onTitle: showTitle, onMoment: showMoment,
+  }));
   resultEl.hidden = false;
 }
 
 // 「今日の 3 手」の拡大表示。大きな盤で、指す前（正解を緑で）と指した後を切り替えて見られる。前後の手にも移れる
 function showMoment(moments: KeyMoment[], index: number, after = false, opts: { won?: boolean } = {}): void {
-  const mo = moments[index];
-  if (!mo) return;
-  const log = mo.log;
-  momentEl.innerHTML = '';
-  const panel = el('div', 'panel');
-  const head = el('div', 'moment-head');
-  head.append(el('b', '', `${log.ply}手目 ${log.kanji}`));
-  head.append(el('span', 'tag' + (mo.kind === 'blunder' ? (opts.won ? ' warn' : '') : ' good'), momentLabel(mo, opts)));
-  panel.append(head);
-
-  const before = positionAfter(log.movesBefore);
-  const played = safeMove(before, log.usi);
-  const better = log.betterUsi ? safeMove(before, log.betterUsi) : null;
-  const boardWrap = el('div', 'big-board');
-  if (after) {
-    boardWrap.append(miniBoard(positionAfter([...log.movesBefore, log.usi]), played));
-  } else {
-    boardWrap.append(miniBoard(before, played, mo.kind === 'blunder' ? better : null));
-  }
-  boardWrap.querySelector('.mini-board')?.classList.add('large');
-  panel.append(boardWrap);
-
-  const toggle = el('div', 'seg');
-  const b1 = el('button', 'seg-btn' + (after ? '' : ' on'), '指す前');
-  const b2 = el('button', 'seg-btn' + (after ? ' on' : ''), '指した後');
-  b1.addEventListener('click', () => showMoment(moments, index, false, opts));
-  b2.addEventListener('click', () => showMoment(moments, index, true, opts));
-  toggle.append(b1, b2);
-  panel.append(toggle);
-
-  const fmt = (v: number | null): string => {
-    if (v === null) return '?';
-    if (Math.abs(v) > 3000) return v > 0 ? '先手の詰み筋' : '後手の詰み筋';
-    return (v > 0 ? '+' : '') + String(v);
-  };
-  const pct = (v: number | null): string => (v === null ? '?' : `${Math.round(winProb(v))}%`);
-  // 読みが浅かった数字は確かなものと思わせない（判定のカットインと同じ「目安」の添え書き）
-  const note = typeof log.depth === 'number' && log.depth < SHALLOW_DEPTH ? `（読み ${log.depth} 手・目安）` : '';
-  panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}　勝率 ${pct(log.before)} → ${pct(log.after)}${note}`));
-  panel.append(el('p', 'moment-why', momentCaption(mo, opts)));
-  if (mo.kind === 'blunder' && log.betterKanji) {
-    panel.append(el('div', 'moment-better', `正解: ${log.betterKanji}${better ? '（指す前の盤に緑で表示）' : ''}`));
-  }
-
-  const nav = el('div', 'btn-row');
-  const prev = el('button', 'btn', '‹ 前の手');
-  const next = el('button', 'btn', '次の手 ›');
-  prev.disabled = index === 0;
-  next.disabled = index === moments.length - 1;
-  prev.addEventListener('click', () => showMoment(moments, index - 1, false, opts));
-  next.addEventListener('click', () => showMoment(moments, index + 1, false, opts));
-  nav.append(prev, next);
-  panel.append(nav);
-  const close = el('button', 'btn primary close', '閉じる');
-  close.addEventListener('click', () => { momentEl.hidden = true; });
-  panel.append(close);
-  momentEl.append(panel);
-  momentEl.hidden = false;
+  renderMoment(momentEl, moments, index, after, opts);
 }
 
 // 対局後の一言。叱られ方に合わせて一つだけ
-function closingWord(g: Game, result: Result): string {
-  if (result === 'win') {
-    if (g.hints >= 10) return '……ヒントに頼りすぎじゃ。次は自力で来い。';
-    if (g.scolded === 0 && g.badMoves === 0) return '文句のつけようがない。見事じゃった。';
-    return 'まあ、勝ちは勝ちじゃ。次も来い。';
-  }
-  if (result === 'draw') return '負けはせんかったが、勝ちもせんかった。次は決めに来い。';
-  if (g.scolded >= 3) return `気合いだけでは${g.style.name}は崩せん。相手の狙いを読んでから指せ。`;
-  if (g.badMoves + g.scolded === 0) return '悪手はなかった。あとは勢いじゃ。もう一局どうじゃ。';
-  const lessons = g.style.lessons;
-  return lessons[Math.floor(Math.random() * lessons.length)];
-}
-
 // 開発時だけ、画面の確認用に内部関数を公開する
 if (import.meta.env.DEV) {
-  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, piece: pieceElementForDebug, setMuted, playThunder, playPiece };
+  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, render, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, piece: pieceElementForDebug, setMuted, playThunder, playPiece };
 }
 
 showTitle();

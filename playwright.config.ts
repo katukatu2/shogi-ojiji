@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 // Playwright の E2E テスト（tests/e2e/*.spec.ts）。
-// vite dev を 5179 番で起動して、Chromium だけで、スマートフォン相当の画面（375×667）で確かめる。
+// vite dev を 5179 番で起動して、Chromium・WebKit のスマートフォン相当の画面（375×667）で確かめる。
 // vite.config.ts が COOP/COEP ヘッダーを付けるので、やねうら王（WASM、SharedArrayBuffer）も headless Chromium で動くはず。
 // 動かなければ「判定: 簡易」で進むだけなので、テストはエンジンの有無に依存しないように書いてある。
 // 結果・トレース・レポートは logs/e2e/（git 管理外）に置く。
@@ -32,6 +32,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },
+    { name: 'webkit', use: { browserName: 'webkit' } },
   ],
   webServer: {
     command: `npm run dev -- --port ${PORT} --strictPort`,

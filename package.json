@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/prepare-offline.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -18,12 +18,16 @@
     "assets:sfx": "node scripts/encode-sfx.mjs",
     "assets:body": "python scripts/build-body.py",
     "e2e": "playwright test",
+    "e2e:pwa": "playwright test --config playwright.pwa.config.ts",
+    "release:check": "node scripts/check-release.mjs",
+    "store:shots": "node scripts/store-screenshots.mjs",
     "icons": "node scripts/build-icons.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "8.5.1",
     "@playwright/test": "^1.63.0",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.4.1",

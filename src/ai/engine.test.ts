@@ -9,42 +9,46 @@ describe('やねうら王 WASM', () => {
 
   beforeAll(async () => {
     const factory = require('@mizarjp/yaneuraou.k-p') as EngineFactory;
-    engine = new Engine(factory, 2);
+    // 正しさの試験は固定の深さ・1 スレッド。マシンの負荷を探索精度の条件にしない。
+    engine = new Engine(factory, 1);
     await engine.init();
   });
 
   afterAll(() => engine.terminate());
 
   it('初期局面はほぼ互角', async () => {
-    const a = await engine.analyze([], { movetime: 200 });
+    const a = await engine.analyze([], { depth: 10 });
     expect(Math.abs(a.cp)).toBeLessThan(200);
     expect(a.bestmove).toMatch(/^[1-9][a-i][1-9][a-i]\+?$/);
-    expect(a.depth).toBeGreaterThan(5);
+    expect(a.depth).toBeGreaterThanOrEqual(10);
   });
 
   it('△４五角の両取りを食らった局面は先手が大きく不利', async () => {
     const moves = ['7g7f', '8c8d', '7i6h', '3c3d', '2g2f', '2b8h+', '6h8h', 'B*4e'];
-    const a = await engine.analyze(moves, { movetime: 300 });
+    const a = await engine.analyze(moves, { depth: 10 });
     expect(a.cp).toBeLessThan(-300);
   });
 
   it('SFEN で局面を渡せる（手番を入れ替えた局面の読み）', async () => {
-    // ▲７六歩 △３四歩 のあと、７九の銀が無い（８八の角がタダ）局面を後手番で読む → 後手は角を取ってくる
-    const a = await engine.analyze([], { sfen: 'lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/1B5R1/LN1GKGSNL w - 3', movetime: 200 });
+    // ７九の銀を３八へ移した局面。銀が飛車の横利きを遮り、８八の角が本当にタダになる。
+    // 以前の局面は▲同飛で取り返せたため、角取りを唯一の正解とする assert が誤っていた。
+    const a = await engine.analyze([], { sfen: 'lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/1B4SR1/LN1GKGSNL w - 3', depth: 10 });
     expect(a.bestmove).toBe('2b8h+');
     expect(a.cp).toBeLessThan(-300); // 先手視点で大損
   });
 
   it('後手番の局面でも先手視点の値になる', async () => {
     // 先手が角をタダで捨てた直後（後手番）。先手視点で大きくマイナス
-    const a = await engine.analyze(['7g7f', '3c3d', '8h5e'], { movetime: 200 });
+    const a = await engine.analyze(['7g7f', '3c3d', '8h5e'], { depth: 10 });
     expect(a.cp).toBeLessThan(-400);
   });
 
   it('一手詰めを詰みとして返す', async () => {
-    // 先手番: 5二金打で詰む形は初期局面から作れないので、詰みの値が MATE_SCORE 近辺かだけ確認
-    const a = await engine.analyze(['7g7f', '8c8d', '7i6h', '3c3d', '2g2f', '2b8h+', '6h8h', 'B*4e'], { movetime: 100 });
-    expect(Math.abs(a.cp)).toBeLessThan(MATE_SCORE);
+    // ５三金に支えられた頭金。SFEN から本当に一手詰めを読む。
+    const a = await engine.analyze([], { sfen: '4k4/9/4G4/9/9/9/9/9/4K4 b G 1', depth: 8 });
+    expect(a.bestmove).toBe('G*5b');
+    expect(a.mate).toBe(1);
+    expect(a.cp).toBe(MATE_SCORE - 1);
   });
 
   it('MultiPV で複数の候補手が返る', async () => {

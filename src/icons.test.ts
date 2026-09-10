@@ -126,7 +126,7 @@ describe('アイコン生成（scripts/build-icons.mjs）', () => {
       expect(byFile.get(`${dir}/ic_launcher_round.png`)).toMatchObject({ size: expected[density][0], kind: 'launcher-round' });
       expect(byFile.get(`${dir}/ic_launcher_foreground.png`)).toMatchObject({ size: expected[density][1], kind: 'foreground' });
     }
-    expect(OUTPUTS.length).toBe(5 + 5 * 3);
+    expect(OUTPUTS.length).toBe(9 + 5 * 3);
   });
 
   it('生成物が git に入っていて、寸法が一覧どおり', () => {

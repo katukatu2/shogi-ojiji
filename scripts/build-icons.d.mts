@@ -1,5 +1,5 @@
 // scripts/build-icons.mjs の型。src/icons.test.ts から import するためのもので、実装は .mjs にある
-export type IconKind = 'plain' | 'maskable' | 'square' | 'launcher' | 'launcher-round' | 'foreground';
+export type IconKind = 'plain' | 'maskable' | 'square' | 'splash' | 'launcher' | 'launcher-round' | 'foreground';
 
 export interface IconOutput {
   /** リポジトリ直下からの相対パス */

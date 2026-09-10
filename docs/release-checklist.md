@@ -1,6 +1,6 @@
 # リリース手順書
 
-Web → Android → iOS の順。各節は「コマンド」と「確かめること」で書く。掲載文は [docs/store/listing.md](store/listing.md)。
+Web → Android → iOS の順に検証する。今回の対象は iPhone App Store を含む。進捗は [査読記録](release-audit.md) を参照。各節は「コマンド」と「確かめること」で書く。掲載文は [docs/store/listing.md](store/listing.md)。
 
 ## 0. 共通（どの配信先でも最初にやる）
 
@@ -14,9 +14,9 @@ git status               # 生成物の差分が残っていないこと
 ```
 
 - [ ] `package.json` の `version` と、Android の `android/app/build.gradle` の `versionCode`（毎回 +1）・`versionName` を上げた
-- [ ] 素材（エンジン・画像・音）を差し替えたなら `public/coi-serviceworker.js` のキャッシュ名 `ojiji-vN` を上げた
+- [ ] build が `dist/offline-assets.json` と同じ識別子の Service Worker、`dist/LICENSE.txt` を生成した
 - [ ] タイトル画面のクレジット欄に、プライバシーポリシー（`privacy.html`）とソース公開先のリンクがある
-- [ ] `public/privacy.html` と `docs/store/listing.md` の「（公開先 URL）」を実際の URL に置き換えた
+- [ ] ソース公開先・連絡先・配信先のログ方針を確定し、`npm run release:check` が通った
 - [ ] リリースするコミットにタグを打つ: `git tag v<versionName> && git push origin v<versionName>`
 
 ## 1. Web（静的配信）
@@ -87,14 +87,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ### 2-3. 署名（アップロード鍵）
 
-鍵はリポジトリの外に置く（例: `~/keys/`）。`android/.gitignore` は `*.jks` を除外していないので、`android/` の中に置かない。
+鍵はリポジトリの外に安全に保管する。`android/.gitignore` は `*.jks`・`*.keystore`・`keystore.properties` を除外済み。
 
 ```bash
 keytool -genkeypair -v -keystore ~/keys/ojiji-upload.jks -alias upload \
   -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-`android/keystore.properties`（git 管理外。`android/.gitignore` に `keystore.properties` を足す）:
+`android/keystore.properties`（git 管理外）:
 
 ```properties
 storeFile=/Users/<you>/keys/ojiji-upload.jks
@@ -141,7 +141,7 @@ cd android
 ### 2-4. Play Console
 
 - [ ] アプリを作成（アプリ名・デフォルトの言語 日本語・「ゲーム」・無料）
-- [ ] 「アプリのコンテンツ」: プライバシーポリシー URL（`https://<配信先>/privacy.html`）、広告なし、データセーフティ（収集・共有なし）、コンテンツ レーティングの質問票（全項目なし → 全年齢）、対象ユーザー（13 歳以上）、政府アプリでない、ニュースアプリでない
+- [ ] 「アプリのコンテンツ」: 公開済みプライバシーポリシー URL、広告、データセーフティ、年齢質問票、対象ユーザーを実際のアプリ・配信先に沿って申告した。年齢・対象ユーザーを未確認のまま固定しない
 - [ ] 「ストアの掲載情報」: [listing.md](store/listing.md) のアプリ名・短い説明・詳しい説明、アイコン `public/icons/icon-512-square.png`、フィーチャーグラフィック 1024×500、スクリーンショット 5 枚
 - [ ] 「Play アプリ署名」を有効にし、`app-release.aab` を内部テストにアップロード
 - [ ] 内部テストの端末で 2-2 の項目をもう一度確認してから、製品版へ昇格
@@ -157,59 +157,70 @@ cd android
 
 ## 3. iOS（App Store）
 
-GPL と App Store の相性問題（Apple の利用規約が GPL の再配布条件と衝突するとされる）があるため、Web と Android を先に出す。iOS は以下を確かめてから判断する。
+今回から iPhone App Store 版も対象。プロジェクトの追加は済んでいるが、Mac ビルド・実機検証・配布条件の確認は未完了。
 
 ### 3-1. 用意するもの
 
-- macOS と Xcode（`xcode-select --install` で Command Line Tools も）、CocoaPods（`sudo gem install cocoapods` または `brew install cocoapods`）
-- Apple Developer Program（TestFlight・App Store 配信に必要）
+- macOS と Xcode 26 以降。Capacitor v8 の [公式要件](https://capacitorjs.com/docs/ios)を参照する。
+- Apple Developer Program と対象の iPhone。署名用 Team はユーザーのアカウントで設定する。
+- このプロジェクトは Swift Package Manager を使用する。CocoaPods はこの構成では不要。
 
-### 3-2. プロジェクトを作る
+### 3-2. 生成済みのプロジェクトを開く
 
 ```bash
-npm i -D @capacitor/ios                   # まだ入れていない（package.json は android だけ）
-npx cap add ios                           # ios/ を生成。capacitor.config.ts の iosScheme は https
-npm run cap:ios                           # build → sync ios → Xcode を開く
+npm ci
+npm run build
+npx cap sync ios
+npx cap open ios
 ```
 
-- [ ] Xcode で Signing & Capabilities の Team を選び、Bundle Identifier が `jp.sonot.shogiojiji`
-- [ ] `ios/App/App/Assets.xcassets/AppIcon.appiconset` に 1024×1024 のアイコンを入れる（`public/icons/icon-512-square.png` と同じ描き方で 1024 を作る。`scripts/build-icons.mjs` の `listOutputs` に 1 行足せばよい）
-- [ ] `Info.plist` の表示名（`CFBundleDisplayName`）が「将棋オジジの定石指南」
+`npx cap add ios` は実行済みで、繰り返さない。`ios/App/App.xcodeproj` を開く。
+`.github/workflows/ios.yml` は署名なしシミュレータビルドを用意しているが、リモート未設定のためまだ実行していない。
 
-### 3-3. WKWebView で crossOriginIsolated が取れるか（エンジンが動くか）
+- [ ] Xcode で Team を設定し、Bundle Identifier が `jp.sonot.shogiojiji` と一致する
+- [ ] 生成済みの 1024px AppIcon と起動画面が実際に表示され、Capacitor の既定ロゴが残っていない
+- [ ] 表示名が「将棋オジジの定石指南」、対象が iPhone、縦画面である
+- [ ] アーカイブした SDK の Privacy Report と必要な Privacy Manifest・利用理由を確認した
 
-iOS の WKWebView は、Capacitor が自前のスキームハンドラで `https://localhost` から配信する。この経路では Service Worker が登録できないことが多く、
-`public/coi-serviceworker.js` による COOP/COEP の付与が効かない可能性が高い。次の手順で確かめる。
+### 3-3. エンジンを実機で確認する
 
-1. シミュレータか実機でアプリを起動する（Xcode の Run）。
-2. Mac の Safari → 「開発」メニュー → シミュレータ／実機名 → 「将棋オジジの定石指南」の WebView を選ぶ（Safari の「開発」メニューは Safari の設定 > 詳細 で表示する）。
-3. Web インスペクタのコンソールで次を打つ。
+iOS は `capacitor://localhost` からローカル素材を読む。`https` は WKWebView の予約スキームなので、Capacitor のローカル配信に指定しない。
+Web の Service Worker で成功した結果を、そのままネイティブアプリの成功とは見なさない。
+
+1. Xcode でシミュレータと iPhone 実機を起動する。
+2. Safari の Web インスペクタで以下の値と、エンジンの起動エラーを記録する。
 
    ```js
-   crossOriginIsolated                 // true ならエンジンが動く
-   typeof SharedArrayBuffer            // 'function' なら使える
-   navigator.serviceWorker?.controller // null なら Service Worker が効いていない
+   crossOriginIsolated
+   typeof SharedArrayBuffer
+   navigator.serviceWorker?.controller
    ```
 
-4. アプリの画面右上を見る。「判定: 簡易」が出ていれば取れていない。
+3. 画面に「判定: エンジン」と出ること、実際にヒント・悪手判定・応手が動くことを確認する。
 
-- [ ] `crossOriginIsolated === true` で、「判定: 簡易」が出ない → Android と同じ判定で出せる
-- [ ] 取れない場合 → 簡易判定（駒損と一手詰めだけ）で動く。この状態で出すなら、ストアの説明文に「iOS 版は判定が簡易版」と書き、対局中の案内文（`src/main.ts` の簡易判定の知らせ）が iOS でも出ることを確認する。
-      本格対応するなら、iOS 側のスキームハンドラ（Capacitor の `WebViewAssetHandler`）で応答に COOP/COEP ヘッダーを足す改造が要る（Capacitor 本体の変更になるので、別途検討）
+- [ ] エンジンが起動する。単に crossOriginIsolated が true であるだけでは合格にしない
+- [ ] 起動できない場合、簡易判定の制限を確認して対応方針を決める。ヘッダーを追加するだけで解決するとは断定しない
+- [ ] 同じエンジンのネイティブ連携や単一スレッド化を検討する場合、固定エンジン・評価関数の条件とライセンスを守る
+- [ ] 本格判定が使えない端末に、ストア説明で同等の指導機能を保証しない
 
-### 3-4. 確かめること（Android と同じ項目）
+### 3-4. 操作と保存
 
-- [ ] 「判定: 簡易」の有無を 3-3 の結果どおりに把握している
-- [ ] 駒音と雷の効果音が、最初のタップの後に鳴る（iOS は自動再生が制限される。`src/ui/audio.ts` の解錠が効いていること）
-- [ ] 縦画面固定、セーフエリア（ノッチ・ホームバー）の中に盤とボタンが収まる
-- [ ] 機内モードで起動できる
+- [ ] 駒音と雷が初回のタップ後に鳴る。声は出ず、雷の設定音量は 10%
+- [ ] ノッチ・ホームバー・文字拡大の状態でも盤と操作ボタンが使える
+- [ ] アプリ切り替え、バックグラウンド復帰、再起動後の成績保存を確認した
+- [ ] 機内モードで起動して対局できる
+- [ ] 投了・再戦・指し直し・成り・持ち駒・ヒント・待ったが使える
 
 ### 3-5. 配信
 
 ```bash
-npm run build && npx cap sync ios
-# Xcode: Product > Archive → Distribute App → App Store Connect（TestFlight）
+npm run build
+npx cap sync ios
+# Xcode: Product > Archive → Distribute App → App Store Connect
 ```
 
-- [ ] App Store Connect でプライバシーの回答（データ収集なし）、年齢（4+）、カテゴリ（ゲーム > ボード）、スクリーンショット（6.7 インチと 6.1 インチ）
-- [ ] GPL のソース公開（2-5 と同じ）。App Store に出す前に、GPL とストア規約の扱いを確認し、必要なら iOS 版は配信しない判断をする
+- [ ] TestFlight で署名済みビルドを検証した
+- [ ] App Store Connect のプライバシーと年齢質問票を実態に合わせて回答した
+- [ ] 対象 iPhone で撮り直した画像を、[Apple の寸法要件](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/)に合わせて用意した。Web の 1080×1920 原案は提出用の iPhone 実機画像ではない
+- [ ] GPL に沿う対応ソース一式の提供方法と、App Store の配布条件との整合を確認した。プロジェクトを生成しただけではこの確認は完了しない
+- [ ] 公開先・連絡先・サポート URL を確定し、リリースする版の案内と一致している

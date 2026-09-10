@@ -1,13 +1,15 @@
-# 将棋オジジの定石指南（仮）
+# 将棋オジジの定石指南
 
 オジジは毎回、得意戦法（まずは矢倉）で囲ってくる。プレイヤーは自由に指してよい。
 ただし、その戦法相手にやってはいけない手を指すと、オジジがカットインして「ばかもーん！」と叱り、正しい手を教えてくれる。
 企画は [docs/plan.md](docs/plan.md)。
 
+開発引き継ぎ後の現在地は [リリース査読記録](docs/release-audit.md)。iPhone App Store・Android・Web を今回の対象とする。公開先・連絡先と実機検証が未完了で、まだ公開可能とは判定していない。
+
 ## 開発
 
 ```bash
-npm install
+npm ci
 npm run dev        # http://localhost:5173
 npm test           # エンジンと定跡のテスト
 npm run typecheck
@@ -19,16 +21,16 @@ npm run build      # dist/ に静的ファイルを出力
 ```bash
 npm test                          # vitest（ルール・エンジン・定跡・振り返りなどの単体テスト。src/**/*.test.ts）
 npm run e2e                       # Playwright の E2E（tests/e2e/*.spec.ts。vite dev を 5179 番で自動起動する）
-npx playwright install chromium   # E2E の初回だけ。Chromium が無ければ入れる
+npx playwright install chromium webkit   # E2E の初回だけ。Chromium が無ければ入れる
 npx playwright show-report logs/e2e/report   # 直前の E2E のレポートを開く
 ```
 
-- E2E は `playwright.config.ts`。Chromium だけ、スマートフォン相当の画面（375×667）、失敗時は 1 回だけ再試行し、そのときトレースを残す。結果とレポートは `logs/e2e/`（git 管理外）。
+- E2E は `playwright.config.ts`。Chromium と WebKit、スマートフォン相当の画面（375×667）、失敗時は 1 回だけ再試行し、そのときトレースを残す。結果とレポートは `logs/e2e/`（git 管理外）。
 - 確かめる流れ: タイトル → 対局設定 → 対局（「対局開始」の演出）、駒をタップして▲７六歩を指しオジジが応手する、形だけの NG（▲４八玉の玉飛接近）でカットインが出て「指し直す」で戻る、ヒント・待った、投了 → 結果 → 「同じ設定でもう一局」、設定の保存（再読み込み後のタイトルに前回の戦法・強さ）、初回の動線（`localStorage` が空なら対局設定を必ず通る）。
 - エンジンの有無に依存しない。やねうら王が動かない環境では「判定: 簡易」のまま進み、ヒントは「出せん」と言うだけで、どちらでも通る。`OJIJI_E2E_NO_ENGINE=1 npm run e2e` でエンジンのスクリプトを読ませず、その環境を再現できる。
 - セレクタは画面の文言（`getByRole` / `getByText`）が中心。クラス名は盤のマス（`.board .cell`、9×9 を行優先）と最終手・吹き出し・カットインの容器だけ。開発サーバーでは `window.__ojiji.game()` で手数などの状態を読む。
 - `tests/e2e/` は vitest の対象から外してある（`vite.config.ts` の `test.exclude`）。
-- CI（`.github/workflows/ci.yml`）でも Chromium を入れて `npm run e2e` を回し、失敗時はレポートを `playwright-report` として保存する。
+- CI（`.github/workflows/ci.yml`）でも Chromium・WebKit を入れて `npm run e2e` を回し、失敗時はレポートを `playwright-report` として保存する。
 
 ## 収録している戦法（オジジが指す側）
 
@@ -129,7 +131,7 @@ assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。�
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
   ```
-- ヘッダーを設定できない静的ホスティングや Capacitor では `public/coi-serviceworker.js` が Service Worker 経由で付与する（初回のみ自動で再読み込みが入る）。同じ Service Worker がエンジン・雷蔵の画像・音声をキャッシュ優先、アプリ本体をネットワーク優先で保存し、2 回目以降とオフラインで動く。キャッシュ名 `ojiji-v3` を上げると古いものを捨てる。
+- ヘッダーを設定できない Web の静的配信では `public/coi-serviceworker.js` がヘッダーを補い、必要なら一度再読み込みする。本番はビルド全体を先に保存し、HTML・JS・素材を同じバージョンで使う。更新は既存タブを閉じた後に有効になる。`npm run build` がキャッシュの識別子と `dist/offline-assets.json` を自動生成する。ネイティブ WebView のエンジンは実機確認が必要。
 - エンジンが使えない環境（SharedArrayBuffer 不可、読み込み失敗）では、その旨を一度だけ画面下に知らせ、簡易判定で続ける。
 
 ## オジジの絵（雷蔵パーツアニメーション）
@@ -142,7 +144,6 @@ assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。�
 - `src/ui/rig.ts` が状態管理。要素は 1 つだけ作り、タイトル・対局画面の相手の行（52px の顔）・カットイン・結果画面の間で移動して使う。素材が読めなければ `onFail` で SVG の顔に切り替える。`play()` はゲームの出来事のときだけ呼び、単発動作の終了は `raizo-complete` で受け、再生番号で古い終了処理を捨てる。画面が隠れたら `pause()`。
 - 状態の対応: idle（通常）／thinking（思考中・ヒント・待った・助言）／nod（良い手。台詞なし）／good（段階 2。湯飲みで一服）／doubtful（段階 3・王手）／bad（段階 4）／angry（段階 5）／surprised（プレイヤーの勝ち）。叱った後は解説中 thinking、閉じたら通常へ。
 - 対局画面では盤の上の「舞台」にオジジと吹き出しを置き、盤・持ち駒・ボタンとは重ならない。
-- 雷蔵の画像はロスレス WebP（元 PNG と同じ内容、合計 2.4MB）。
 - 駒音は `public/sfx/koma.mp3`（約 15KB。「無料効果音で遊ぼう！（小森平）https://taira-komori.net/」の「将棋の駒パチン４」nc260487。容量が小さいので変換なしで使う）。プレイヤーとオジジの手を盤に反映するたびに鳴らす。
 - 音声はオジジの声を使わず、「ばかもーん！」（段階 5）の場面だけ雷の効果音 `public/sfx/bakamon_thunder.mp3`（モノラル 96kbps、約 33KB）を鳴らす（`src/ui/audio.ts`）。元の WAV は `assets-src/sfx/` にあり、`node scripts/encode-sfx.mjs` で変換する（ffmpeg 不要、lamejs を使う）。1 本の `<audio>` で鳴らし、前の音を止めてから鳴らす。ミュートや再生失敗でも進行は止まらない。最初のタップで `<audio>` を解錠する。ファイルを差し替えたら `SFX_VERSION` を変える。
 
@@ -150,10 +151,10 @@ assets-src/  制作元の素材（頭部のロスレス WebP、雷の WAV）。�
 
 ```bash
 npm run cap:android      # build → sync → Android Studio を開く（android/ は生成済み）
-npx cap add ios          # macOS + Xcode が必要。iOS はまだ未生成
+npm run cap:ios          # build → sync → Xcode を開く（ios/ 生成済み、Mac が必要）
 ```
 
-`capacitor.config.ts` を同梱している（webDir は dist、配信は https スキーム）。Android WebView では Service Worker 経由の COOP/COEP でエンジンが動く想定。iOS（WKWebView）は SharedArrayBuffer の扱いが未検証で、動かない場合は簡易判定で進む。
+`capacitor.config.ts` の webDir は dist。Android は https、iOS は capacitor スキーム。iOS は Swift Package Manager を使用する。Windows での cap sync は確認済みだが、ネイティブビルドと SharedArrayBuffer の可否は未検証。簡易判定での動作だけをもって本格判定が完成したとは扱わない。
 
 ## ライセンス
 
@@ -162,7 +163,7 @@ npx cap add ios          # macOS + Xcode が必要。iOS はまだ未生成
 使用素材のクレジット（アプリのタイトル画面と概要欄に表記する）:
 - 将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite
 - 駒音: 無料効果音で遊ぼう！（小森平）　https://taira-komori.net/
-iOS の App Store は GPL との相性問題が指摘されているため、まず Web と Android を対象にする。
+ユーザーの希望により今回から iPhone App Store 版も対象。GPL に沿ったソース提供と App Store 配布条件の整合は未確認で、提出前に解決する。
 
 ## 自動対局でオジジの台詞を点検する
 

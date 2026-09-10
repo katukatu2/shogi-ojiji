@@ -16,13 +16,14 @@ function loadWorker() {
   const deleted: string[] = [];
   const self = {
     location: { origin: 'https://app.example' },
+    registration: { scope: 'https://app.example/' },
     addEventListener: (name: string, h: Handler) => { (handlers[name] ??= []).push(h); },
     skipWaiting: async () => undefined,
     clients: { claim: async () => undefined },
   };
   const caches = {
     open: async () => cache,
-    keys: async () => ['ojiji-v1', 'ojiji-v4'],
+    keys: async () => ['ojiji:/:old', 'ojiji:/:development', 'other-app', 'ojiji:/another/:old'],
     delete: async (k: string) => { deleted.push(k); return true; },
   };
   const fetched: string[] = [];
@@ -80,6 +81,6 @@ describe('Service Worker', () => {
     let done: Promise<unknown> | null = null;
     w.handlers.activate[0]({ waitUntil: (p: Promise<unknown>) => { done = p; } });
     await done;
-    expect(w.deleted).toEqual(['ojiji-v1']);
+    expect(w.deleted).toEqual(['ojiji:/:old']);
   });
 });

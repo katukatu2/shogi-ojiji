@@ -18,10 +18,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
-      # E2E（Playwright、Chromium のみ）。vite dev を 5179 番で起動して画面の動線を確かめる
-      - run: npx playwright install --with-deps chromium
+      # E2E（Chromium・WebKit）とビルド済み PWA のオフライン起動
+      - run: npx playwright install --with-deps chromium webkit
       - id: e2e
         run: npm run e2e
+      - run: npm run e2e:pwa
       - uses: actions/upload-artifact@v4
         if: ${{ failure() && steps.e2e.outcome == 'failure' }}
         with:

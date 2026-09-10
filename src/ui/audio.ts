@@ -47,12 +47,13 @@ export function isMuted(): boolean {
 
 // 鳴っている効果音を止める
 export function stopSfx(): void {
-  const a = audio;
-  if (a && !a.paused) {
-    try {
-      a.pause();
-    } catch {
-      // 無視
+  for (const a of [audio, piece]) {
+    if (a && !a.paused) {
+      try {
+        a.pause();
+      } catch {
+        // 無視
+      }
     }
   }
 }
