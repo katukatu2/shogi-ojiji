@@ -72,7 +72,8 @@ export const EVAL_HOPELESS = -1000; // 指す前にこれより悪ければ（�
 export const MATE_MISSED_MAX = 3; // この手数以内の詰みを見逃したときだけ「詰みを見逃すな」（長い詰みは初心者に見えない）
 export const MATE_ALLOWED_MAX = 5; // この手数以内で詰まされる手だけ「詰まされるぞ」。長い詰みは形勢の落ち幅で判断
 // 指す前の読みがこれより浅ければ、形勢の数字に「目安」と添える（浅い読みの数字を確かなものと思わせない）。
-// 実測（400ms・MultiPV 2）の深さは 10〜13 なので、8 では「目安」が一度も出なかった
+// 実測（400ms・MultiPV 2）の深さは序盤で 15〜17、駒がぶつかった局面で 10 ほど。
+// 8 では「目安」が一度も出なかったので 14 にした（読みが伸びない難しい局面だけ添える）
 export const SHALLOW_DEPTH = 14;
 const EVAL_CLAMP = 3000;
 
@@ -510,11 +511,17 @@ ${playedLine}`;
     const retold = !!(missed?.rescued && threat && missed.rescued.x === threat.to.x && missed.rescued.y === threat.to.y);
     const taken = pos.get(move.to.x, move.to.y); // 指した手が取った駒
     const gained = taken && taken.color === 1 ? PIECE_VALUE[taken.type] : 0;
+    // 指した手の行き先をそのまま取り返されたか（「△同歩」の形か）
+    const retaken = !!(threat && threat.to.x === move.to.x && threat.to.y === move.to.y);
     if (hangs && !retold) {
-      consequence = gained >= PIECE_VALUE[hangs]
-        // 同等以上の駒を取った後に取り返されるのは「駒損」ではなく「交換」
-        ? `その手は${threatText}と取り返されて${tradeName(taken!.type, hangs)}になる。`
-        : `その手は${threatText}と${PIECE_NAME[hangs]}を取られる。`;
+      if (!taken || gained < PIECE_VALUE[hangs]) consequence = `その手は${threatText}と${PIECE_NAME[hangs]}を取られる。`;
+      else {
+        // 同等以上の駒を取った後の取られ方は「駒損」ではなく「交換」
+        const trade = tradeName(taken.type, hangs);
+        consequence = retaken
+          ? `その手は${threatText}と取り返されて${trade}になる。`
+          : `その手は${threatText}と${PIECE_NAME[hangs]}を取られ、${trade}になる。`;
+      }
     } else if (threat?.promote && !retold) consequence = `その手は${threatText}と成り込まれる。`;
     else if (threatKind === 'check') consequence = `その手は${threatText}と王手されて苦しい。`;
 

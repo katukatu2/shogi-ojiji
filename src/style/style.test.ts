@@ -818,7 +818,7 @@ describe('読みの深さと数字の確からしさ', () => {
     const j = await new Judge(fakeEvaluator(tableWithDepth(3))).judge(pos, usiToMove(pos, '8h5e'));
     expect(j.verdict?.kind).toBe('eval');
     expect(j.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +60（互角）（読み 3 手・目安）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
-    // 実測（400ms・MultiPV 2）でよくある深さ 12 でも添える
+    // 駒がぶつかった局面でよくある深さ（10〜13）でも添える
     const pos2 = Position.initial();
     play(pos2, '7g7f', '3c3d');
     const j2 = await new Judge(fakeEvaluator(tableWithDepth(12))).judge(pos2, usiToMove(pos2, '8h5e'));
@@ -826,7 +826,7 @@ describe('読みの深さと数字の確からしさ', () => {
     expect(j.analysis?.depth).toBe(3);
   });
 
-  // 実測（400ms・MultiPV 2）の深さは 10〜13。しきい値が 8 では「目安」が一度も出なかったので 14 にした
+  // 実測（400ms・MultiPV 2）の深さは序盤 15〜17、駒がぶつかると 10 ほど。しきい値 8 では一度も出なかったので 14 にした
   it('読みが 14 手以上なら目安とは言わない', async () => {
     for (const depth of [14, 20]) {
       const pos = Position.initial();
@@ -985,6 +985,26 @@ describe('取られる・取り返される・取られん の言い分け', () 
     const j = await judge.judge(pos, usiToMove(pos, '6f5e'));
     expect(j.verdict?.why.startsWith('その手は△同歩と取り返されて角銀交換になる。')).toBe(true);
     expect(j.verdict?.why).not.toContain('銀を取られる');
+  });
+
+  it('取り返しでなくても、同等以上の駒を取っていれば「交換」と言い添える', async () => {
+    // ▲２四歩と飛車を取り、離れた８八の角を△３三角に取られる形。飛角交換であって一方的な駒損ではない
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(4, 8, { type: 'OU', color: 0 }); // ５九玉
+    pos.set(1, 7, { type: 'KA', color: 0 }); // ８八角
+    pos.set(7, 4, { type: 'FU', color: 0 }); // ２五歩
+    pos.set(8, 6, { type: 'FU', color: 0 }); // １七歩
+    pos.set(4, 0, { type: 'OU', color: 1 }); // ５一玉
+    pos.set(6, 2, { type: 'KA', color: 1 }); // ３三角
+    pos.set(7, 3, { type: 'HI', color: 1 }); // ２四飛
+    const judge = new Judge(fakeEvaluator({
+      '': { cp: 300, bestmove: '1g1f' },
+      '1g1f': { cp: 300 },
+      '2e2d': { cp: -100, bestmove: '3c8h+', pv: ['3c8h+'] },
+    }));
+    const j = await judge.judge(pos, usiToMove(pos, '2e2d'));
+    expect(j.verdict?.why.startsWith('その手は△８八角成と角を取られ、飛角交換になる。')).toBe(true);
   });
 
   it('正解を指しても取り自体が残るなら「タダでは取られん」と言う', async () => {
