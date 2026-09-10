@@ -483,6 +483,7 @@ function startGame(style: Style): void {
   selectedHand = null;
   hintMove = null;
   hintedUsi = null;
+  hintShownKey = '';
   buildGameScreen();
   render();
   showStartBanner(style);
@@ -1060,6 +1061,7 @@ function takeBack(): void {
 // 計算を待つ間はフラグを立て、二度押し・着手・待ったを止める。
 // 待たせた結果が古い局面のものなら（局面の鍵が変わっていたら）捨てる
 let hintBusy = false;
+let hintShownKey = ''; // ヒントを出した局面。同じ局面で押し直しても回数は増やさない
 async function showHint(): Promise<void> {
   const g = game;
   if (!g || g.busy || g.result || hintBusy || g.pos.turn !== 0) return;
@@ -1075,7 +1077,10 @@ async function showHint(): Promise<void> {
     if (game !== g || g.result || g.pos.key() !== key || !a.bestmove) return;
     const m = safeMove(g.pos, a.bestmove);
     if (!m) return;
-    g.hints++;
+    if (hintShownKey !== key) {
+      hintShownKey = key;
+      g.hints++; // 数えるのは実際に出したときだけ
+    }
     hintMove = m;
     hintedUsi = moveToUsi(m);
     render();
