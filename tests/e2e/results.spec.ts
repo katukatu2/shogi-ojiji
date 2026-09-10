@@ -64,4 +64,14 @@ test('今日の3手を拡大し、指す前・指した後を切り替えて閉�
   await modal.getByRole('button', { name: '閉じる', exact: true }).click();
   await expect(modal).toBeHidden();
   await expect(page.locator('.result')).toBeVisible();
+  const progress = await readProgress(page);
+  await page.locator('.result .moment').first().click();
+  await expect(modal).toBeVisible();
+  await page.goBack();
+  await expect(modal).toBeHidden();
+  await expect(page.locator('.result')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => history.state?.ojiji)).toBe(2);
+  expect(await readProgress(page)).toEqual(progress);
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: '将棋オジジの定石指南' })).toBeVisible();
 });

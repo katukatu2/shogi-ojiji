@@ -156,6 +156,11 @@ let nodTimer: number | undefined;
 // 戻る操作を WebView に渡すので、同じ道を通る。
 // アプリ内のボタンで浅い画面へ行くときは、その分だけ履歴を戻し、そのとき届く popstate は無視する。
 const navigation = new ScreenHistory((screen) => {
+  if (screen === 'game' && momentEl && !momentEl.hidden) {
+    momentEl.hidden = true;
+    goToScreen('game');
+    return;
+  }
   if (screen === 'settings') {
     showTitle();
     return;
@@ -177,6 +182,7 @@ function goToScreen(name: ScreenName): void { navigation.go(name); }
 // タイトルは、オジジ・題名・一言・ボタン・遊び方だけ。強さと戦法は「対局設定」で選ぶ。
 // 2 回目以降は「前回の設定で始める」で 1 タップで対局に入れる
 function showTitle(): void {
+  resetToast();
   stopSfx();
   game = null;
   goToScreen('title');
@@ -194,6 +200,7 @@ function showTitle(): void {
 let pendingStyleId: string | null = null;
 
 function showSettings(): void {
+  resetToast();
   stopSfx();
   game = null;
   goToScreen('settings');
@@ -209,6 +216,7 @@ function showSettings(): void {
 
 // ===== 対局 =====
 function startGame(style: Style): void {
+  resetToast();
   stopSfx();
   ensureEngine();
   progress.lastStyle = style.id;
@@ -907,6 +915,16 @@ let lineTurn = -1; // 台詞を出した手の番号
 const BUBBLE_GAP_MS = 1500; // 吹き出しが消えてから次を出すまでの間。続けざまに出さない
 let bubbleHiddenAt = -1e9;
 
+function resetToast(): void {
+  window.clearTimeout(nodTimer);
+  nodTimer = undefined;
+  toastSerial++;
+  if (nodEl) nodEl.hidden = true;
+  bubbleHiddenAt = -1e9;
+  turnId = 0;
+  lineTurn = -1;
+}
+
 function showToast(state: RigState, title: string, body: string, ms: number, kind: ToastKind = 'reaction'): void {
   // 吹き出しが出ている間と、消えた直後は、どんな台詞も出さない（置き換えも順番待ちもしない）。
   // これで台詞が重なったり、続けざまに出たりしない
@@ -931,6 +949,7 @@ function showToast(state: RigState, title: string, body: string, ms: number, kin
   nodEl.hidden = false;
   window.clearTimeout(nodTimer);
   nodTimer = window.setTimeout(() => {
+    if (mine !== toastSerial) return;
     nodEl.hidden = true;
     bubbleHiddenAt = performance.now();
     if (mine === toastSerial) rig.settle(baseState());

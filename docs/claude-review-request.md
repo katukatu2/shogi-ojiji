@@ -1,5 +1,7 @@
 # Claudeへの限定査読依頼
 
+この依頼への査読は受領済み。次回は [claude-rereview-request.md](claude-rereview-request.md) を使う。以下は当時の記録。
+
 以下をClaude Codeへ渡してください。リポジトリのファイルを参照できる環境向けです。
 
 ---

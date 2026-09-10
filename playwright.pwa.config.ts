@@ -9,7 +9,7 @@ export default defineConfig({
     { name: 'static-with-headers', use: { baseURL: 'http://localhost:5181' } },
   ],
   webServer: [
-    { command: 'node scripts/serve-static.mjs 5180', url: 'http://localhost:5180', reuseExistingServer: !process.env.CI },
-    { command: 'node scripts/serve-static.mjs 5181 --isolated', url: 'http://localhost:5181', reuseExistingServer: !process.env.CI },
+    { command: 'node scripts/serve-static.mjs 5180 --faults', url: 'http://localhost:5180', reuseExistingServer: !process.env.CI },
+    { command: 'node scripts/serve-static.mjs 5181 --isolated --faults', url: 'http://localhost:5181', reuseExistingServer: !process.env.CI },
   ],
 });

@@ -7,7 +7,7 @@
 
 将棋オジジの定石指南
 
-- 30 字以内。「（仮）」は取った。正式名が決まったら README・`index.html` の `<title>`・`public/manifest.webmanifest`・`android/app/src/main/res/values/strings.xml`・`capacitor.config.ts` の `appName` も一緒に変える。
+- 30 字以内。「（仮）」は取った。改名時は README・`index.html` の `<title>`・`public/manifest.webmanifest`・`android/app/src/main/res/values/strings.xml`・`ios/App/App/Info.plist` の `CFBundleDisplayName`・`capacitor.config.ts` の `appName` も一緒に変える。
 
 ## 短い説明（80 字以内）
 

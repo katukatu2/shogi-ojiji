@@ -145,7 +145,7 @@ describe('総合判定', () => {
     play(pos, '7g7f', '3c3d');
     const bad = await judge.judge(pos, usiToMove(pos, '8h5e'));
     expect(bad.verdict?.kind).toBe('eval');
-    expect(bad.verdict?.why).toContain('△同角と角を取られる'); // 取られる駒の名前を入れる
+    expect(bad.verdict?.why).toContain('△同角で角を取られる'); // 取られる駒の名前を入れる
     expect(bad.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +20（互角）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
     const good = await judge.judge(pos, usiToMove(pos, '8h2b+'));
     expect(good.verdict).toBeNull();
@@ -317,7 +317,7 @@ describe('2026-09-04 のプレイ感想への修正', () => {
     const pos = Position.initial();
     play(pos, '7g7f', '3c3d');
     const j = await judge.judge(pos, usiToMove(pos, '8h5e'));
-    expect(j.verdict?.why).toContain('△同角と角を取られる');
+    expect(j.verdict?.why).toContain('△同角で角を取られる');
   });
 });
 
@@ -335,7 +335,7 @@ describe('説明文: 相手の次の手より、逃した手を先に言う', ()
     expect(j.verdict?.kind).toBe('eval');
     expect(j.verdict?.why.startsWith('▲２二角成で角が取れた。')).toBe(true);
     // 取る手は成る手より先に見る（△８八角成は「角を取られる」）
-    expect(j.verdict?.why).toContain('しかもその手は△８八角成と角を取られる');
+    expect(j.verdict?.why).toContain('指した▲１六歩には、△８八角成の応手がある。取り返せば角の交換になる。');
   });
 
   it('取られそうな駒を放置したら「手当てすべき」と言う', async () => {
@@ -520,7 +520,7 @@ describe('攻めるべきか受けるべきか', () => {
     }));
     const j = await judge.judge(pos, usiToMove(pos, 'G*8h'));
     expect(j.verdict?.why.startsWith('受けている場合ではない。▲３五桂と攻める方が速い。')).toBe(true);
-    expect(j.verdict?.why).toContain('しかもその手は△３七角成と成り込まれる');
+    expect(j.verdict?.why).toContain('指した▲８八金打には、△３七角成で成り込まれる');
     expect(j.verdict?.why).not.toContain('ここは▲３五桂じゃ');
   });
 });
@@ -620,7 +620,7 @@ describe('100 局の自動対局で見つかった直し', () => {
       '7g7f 8c8d 2g2f 8d8e 2f2e 8e8f 3i3h': { cp: -900, bestmove: '8f8g+', pv: ['8f8g+'] },
     }));
     const j = await judge.judge(pos, usiToMove(pos, '3i3h'));
-    expect(j.verdict?.why.startsWith('その手は△８七歩成と成り込まれる。')).toBe(true);
+    expect(j.verdict?.why.startsWith('指した▲３八銀には、△８七歩成で成り込まれる。')).toBe(true);
     expect(j.verdict?.why).not.toContain('歩が取れた');
   });
 
@@ -854,7 +854,7 @@ describe('正解ならなぜ助かるか', () => {
     const j = await judge.judge(pos, usiToMove(pos, '8h5e'));
     expect(j.verdict?.kind).toBe('eval');
     expect(j.verdict?.level).toBe(4);
-    expect(j.verdict?.why).toBe('その手は△同角と角を取られる。形勢がはっきり悪くなる。▲６六歩なら角は取られん。');
+    expect(j.verdict?.why).toBe('指した▲５五角には、△同角で角を取られる。形勢がはっきり悪くなる。▲６六歩なら角は取られん。');
     expect(j.verdict?.why).not.toContain('ここは▲６六歩じゃ');
   });
 
@@ -878,7 +878,7 @@ describe('正解ならなぜ助かるか', () => {
     }));
     const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
     expect(j.verdict?.kind).toBe('eval');
-    expect(j.verdict?.why).toBe('その手は△５五歩と角を取られる。形勢がはっきり悪くなる。ここは▲２三歩成じゃ。');
+    expect(j.verdict?.why).toBe('指した▲１六歩には、△５五歩で角を取られる。形勢がはっきり悪くなる。ここは▲２三歩成じゃ。');
     expect(j.verdict?.why).not.toContain('取られん');
   });
 
@@ -902,7 +902,7 @@ describe('正解ならなぜ助かるか', () => {
       '6i5h': { cp: -500, bestmove: '5a5h', pv: ['5a5h'] },
     })).judge(check, usiToMove(check, '6i5h'));
     // 取られる駒の名前（judge-fixes）と「不成」（notation）の両方が入る
-    expect(j1.verdict?.why).toBe('王手の受け方が悪い。その手は△同飛不成と金を取られる。ここは▲４九玉じゃ。');
+    expect(j1.verdict?.why).toBe('王手の受け方が悪い。指した▲５八金には、△同飛不成の応手がある。取り返せるので一方的な駒損ではないが、交換後の形勢まで読む必要がある。ここは▲４九玉じゃ。');
 
     // 取られそうな駒を放置した場面: 「手当てすべき」の文のまま
     const hang = Position.initial();
@@ -985,7 +985,7 @@ describe('取られる・取り返される・取られん の言い分け', () 
       '6f5e': { cp: -100, bestmove: '5d5e', pv: ['5d5e'] },
     }));
     const j = await judge.judge(pos, usiToMove(pos, '6f5e'));
-    expect(j.verdict?.why.startsWith('その手は△同歩と取り返されて角銀交換になる。')).toBe(true);
+    expect(j.verdict?.why.startsWith('指した▲５五銀には、△同歩で取り返されて角銀交換になる。')).toBe(true);
     expect(j.verdict?.why).not.toContain('銀を取られる');
   });
 
@@ -1006,7 +1006,7 @@ describe('取られる・取り返される・取られん の言い分け', () 
       '2e2d': { cp: -100, bestmove: '3c8h+', pv: ['3c8h+'] },
     }));
     const j = await judge.judge(pos, usiToMove(pos, '2e2d'));
-    expect(j.verdict?.why.startsWith('その手は△８八角成と角を取られ、飛角交換になる。')).toBe(true);
+    expect(j.verdict?.why.startsWith('指した▲２四歩には、△８八角成で角を取られ、飛角交換になる。')).toBe(true);
   });
 
   it('正解を指しても取り自体が残るなら「タダでは取られん」と言う', async () => {
@@ -1026,7 +1026,7 @@ describe('取られる・取り返される・取られん の言い分け', () 
       '7i7h': { cp: -400, bestmove: '3c8h+', pv: ['3c8h+'] },
     }));
     const j = await judge.judge(pos, usiToMove(pos, '7i7h'));
-    expect(j.verdict?.why).toBe('その手は△８八角成と角を取られる。形勢がはっきり悪くなる。▲１六歩なら角はタダでは取られん。');
+    expect(j.verdict?.why).toBe('指した▲７八銀には、△８八角成で角を取られる。形勢がはっきり悪くなる。▲１六歩なら角はタダでは取られん。');
   });
 });
 

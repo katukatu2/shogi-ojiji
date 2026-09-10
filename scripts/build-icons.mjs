@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
+import { opaqueRgbPng } from './rgb-png.mjs';
 
 /** 端末の密度ごとの倍率（mdpi を 1 とする） */
 export const DENSITIES = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
@@ -170,7 +171,9 @@ export function buildAll(root = repoRoot()) {
   const ctx = loadContext(root);
   const written = [];
   for (const o of OUTPUTS) {
-    const { png, width, height } = render(composeSvg(o.kind, o.size, ctx), o.size);
+    const rendered = render(composeSvg(o.kind, o.size, ctx), o.size);
+    const { width, height } = rendered;
+    const png = o.file.includes('/AppIcon.appiconset/') ? opaqueRgbPng(rendered) : rendered.png;
     if (width !== o.size || height !== o.size) throw new Error(`${o.file}: ${width}x${height} になった（${o.size} のはず）`);
     const path = join(root, o.file);
     mkdirSync(dirname(path), { recursive: true });

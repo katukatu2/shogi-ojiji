@@ -81,7 +81,7 @@ export function renderResult({ game, result, progress, lastOutcome, faceInto, on
   return panel;
 }
 
-function closingWord(g: Game, result: Result): string {
+export function closingWord(g: Pick<Game, 'style' | 'pos' | 'hints' | 'scolded' | 'badMoves'>, result: Result): string {
   if (result === 'win') {
     if (g.hints >= 10) return '……ヒントに頼りすぎじゃ。次は自力で来い。';
     if (g.scolded === 0 && g.badMoves === 0) return '文句のつけようがない。見事じゃった。';
@@ -90,6 +90,9 @@ function closingWord(g: Game, result: Result): string {
   if (result === 'draw') return '負けはせんかったが、勝ちもせんかった。次は決めに来い。';
   if (g.scolded >= 3) return `気合いだけでは${g.style.name}は崩せん。相手の狙いを読んでから指せ。`;
   if (g.badMoves + g.scolded === 0) return '悪手はなかった。あとは勢いじゃ。もう一局どうじゃ。';
-  // 戦法別の一般論を無作為に出すと、実際には起きていない攻めを振り返ってしまう。
-  return '次の一局は、指す前に相手の狙いと玉の安全を確かめるのじゃ。';
+  const lessons = [
+    ...g.style.lessons,
+    ...(g.style.conditionalLessons ?? []).filter((lesson) => lesson.when(g.pos)).map((lesson) => lesson.text),
+  ];
+  return lessons[Math.floor(Math.random() * lessons.length)] ?? '次は相手の狙いを読んでから指すのじゃ。';
 }

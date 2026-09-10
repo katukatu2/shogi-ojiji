@@ -38,6 +38,12 @@ function halfSide(radius: number): number {
 }
 
 describe('アイコン生成（scripts/build-icons.mjs）', () => {
+  it('iOSの実PNGを独立したデコーダで読み、元のレンダリングと全画素の色が一致する', () => {
+    const png = readFileSync(join(root, 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'));
+    const decoded = render(`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><image width="1024" height="1024" href="data:image/png;base64,${png.toString('base64')}"/></svg>`, 1024);
+    const source = draw('square', 1024);
+    expect(Buffer.from(decoded.pixels).equals(Buffer.from(source.pixels))).toBe(true);
+  });
   it('icon.svg から地の色と角の丸みを読む', () => {
     expect(ctx.viewBox).toBe('0 0 256 256');
     expect(ctx.fill).toBe('#2b3a55');
@@ -134,6 +140,7 @@ describe('アイコン生成（scripts/build-icons.mjs）', () => {
       const path = join(root, o.file);
       expect(existsSync(path), o.file).toBe(true);
       expect(pngSize(readFileSync(path)), o.file).toEqual({ width: o.size, height: o.size });
+      if (o.file.includes('/AppIcon.appiconset/')) expect(readFileSync(path)[25]).toBe(2);
     }
   });
 

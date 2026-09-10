@@ -28,6 +28,13 @@
 }
 
 html,
+#offline-status {
+  margin: 12px auto;
+  padding: 8px 16px;
+  max-width: 680px;
+  font-size: 13px;
+}
+
 body {
   margin: 0;
   height: 100%;

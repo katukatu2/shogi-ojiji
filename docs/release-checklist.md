@@ -13,7 +13,9 @@ npm run icons            # public/icon.svg を変えたときだけ。生成物�
 git status               # 生成物の差分が残っていないこと
 ```
 
-- [ ] `package.json` の `version` と、Android の `android/app/build.gradle` の `versionCode`（毎回 +1）・`versionName` を上げた
+- [ ] `package.json` の `version`、Android の `android/app/build.gradle` の `versionName`、iOS の `ios/App/App.xcodeproj/project.pbxproj` の全構成の `MARKETING_VERSION` を揃えた
+- [ ] Android の `versionCode`（毎回 +1）と iOS の全構成の `CURRENT_PROJECT_VERSION` を揃えて上げた。`Info.plist` は `$(MARKETING_VERSION)` と `$(CURRENT_PROJECT_VERSION)` を参照する
+- [ ] iOS の実ファイル `AppIcon-512@2x.png` が 1024×1024 の 8bit RGB PNG（IHDR colorType 2）である。全画素が不透明でもαチャネルがある形式は不可。`npm run icons` で再生成後、`npm run release:artifacts` が通る
 - [ ] build が `dist/offline-assets.json` と同じ識別子の Service Worker、`dist/LICENSE.txt` を生成した
 - [ ] タイトル画面のクレジット欄に、プライバシーポリシー（`privacy.html`）とソース公開先のリンクがある
 - [ ] ソース公開先・連絡先・配信先のログ方針を確定し、`npm run release:check` が通った
@@ -55,6 +57,8 @@ Cross-Origin-Embedder-Policy: require-corp
 - [ ] 画面右上に「判定: 簡易」が出ていない（出ていればエンジンが動いていない。ヘッダーか Service Worker を疑う）
 - [ ] 一局指して、頷き・吹き出し・カットインが出る。駒音と雷の効果音が鳴る
 - [ ] 2 回目の読み込みをオフライン（DevTools の Network を Offline）で開いてもタイトルが出る
+- [ ] 初回の保存失敗時はオフライン未保存の案内が出て、接続中はエンジンで指せる。通信復帰後の再試行で案内が消え、オフライン再起動できる
+- [ ] 更新が欠けたときは旧版のまま動き、正常な更新は既存タブを閉じた後に切り替わる。`npm run e2e:pwa` が通る
 - [ ] `https://<配信先>/privacy.html` が開ける。`manifest.webmanifest` と `icons/` が 200 で返る
 - [ ] Chrome の Lighthouse（PWA / Installability）で、インストール可能と出る。Android Chrome で「ホーム画面に追加」した時のアイコンの角が欠けていない（maskable）
 - [ ] iOS Safari で「ホーム画面に追加」した時のアイコンが黒い角無しで出る（`icons/apple-touch-icon-180.png`）

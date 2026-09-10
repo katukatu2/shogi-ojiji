@@ -35,6 +35,8 @@ export interface Style {
   goodPatterns: GoodPattern[];
   // 対局後に一つだけ出す「この戦法との戦い方」（ランダムに選ぶ）
   lessons: string[];
+  // 現在の盤面について話す助言は、実際にその条件が成立するときだけ候補にする。
+  conditionalLessons?: { text: string; when(pos: Position): boolean }[];
   // 結果画面の一言
   winLine: string; // プレイヤーが勝ったとき
   loseLine: string; // プレイヤーが負けたとき

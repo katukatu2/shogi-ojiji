@@ -72,8 +72,8 @@ export const EVAL_HOPELESS = -1000; // 指す前にこれより悪ければ（�
 export const MATE_MISSED_MAX = 3; // この手数以内の詰みを見逃したときだけ「詰みを見逃すな」（長い詰みは初心者に見えない）
 export const MATE_ALLOWED_MAX = 5; // この手数以内で詰まされる手だけ「詰まされるぞ」。長い詰みは形勢の落ち幅で判断
 // 指す前の読みがこれより浅ければ、形勢の数字に「目安」と添える（浅い読みの数字を確かなものと思わせない）。
-// 実測（400ms・MultiPV 2）の深さは序盤で 15〜17、駒がぶつかった局面で 10 ほど。
-// 8 では「目安」が一度も出なかったので 14 にした（読みが伸びない難しい局面だけ添える）
+// これは到達深さの保証ではなく、短時間の読みを断定しないための表示基準。
+// 端末負荷と局面により14に届かないことが多い。頻度を減らすために基準を下げない。
 export const SHALLOW_DEPTH = 14;
 const EVAL_CLAMP = 3000;
 
@@ -98,7 +98,19 @@ export const LEVEL_HEADLINE: Record<Level, string> = {
   5: 'ばかもーん！',
 };
 
-const ANALYZE_MS = 400;
+export const ANALYZE_MS = 400;
+
+// 相手の取りに対し、実際の合法手で取り返せるかを見る（王手や釘付けも考慮）。
+function captureExchange(pos: Position, move: Move): { gain: number; recapturable: boolean } {
+  const victim = pos.get(move.to.x, move.to.y);
+  if (!victim) return { gain: 0, recapturable: false };
+  pos.apply(move);
+  try {
+    const recapturable = pos.legalMoves().some((reply) => reply.from !== null
+      && reply.to.x === move.to.x && reply.to.y === move.to.y);
+    return { gain: PIECE_VALUE[victim.type] - (recapturable ? PIECE_VALUE[move.piece] : 0), recapturable };
+  } finally { pos.undo(); }
+}
 
 // by 側が今すぐ取れる駒のうち、いちばん得な取り方の得点を返す
 export function bestCaptureGain(pos: Position, by: Color): { gain: number; target: Move | null; victim: PieceType | null } {
@@ -108,10 +120,7 @@ export function bestCaptureGain(pos: Position, by: Color): { gain: number; targe
   for (const m of pos.legalMoves()) {
     const victim = pos.get(m.to.x, m.to.y);
     if (!victim || victim.type === 'OU') continue;
-    pos.apply(m);
-    const defended = pos.isAttacked(m.to.x, m.to.y, (1 - by) as Color);
-    pos.undo();
-    const gain = PIECE_VALUE[victim.type] - (defended ? PIECE_VALUE[m.piece as PieceType] : 0);
+    const { gain } = captureExchange(pos, m);
     if (gain > best.gain) best = { gain, target: m, victim: victim.type };
   }
   pos.turn = saved;
@@ -479,8 +488,11 @@ ${playedLine}`;
     const threat = after.pv[0] ? safeMove(pos, after.pv[0]) : null;
     const threatKind = threat ? classify(pos, threat, 0) : 'other';
     const threatVictim = threat ? pos.get(threat.to.x, threat.to.y) : null;
+    const exchange = threat && threatVictim ? captureExchange(pos, threat) : null;
+    const threatText = threat ? moveToKanji(threat, 1, move, pos) : '';
     pos.undo();
-    const threatText = threat ? moveToKanji(threat, 1, move) : '';
+    const playedText = moveToKanji(move, 0, null, pos);
+    const replyToPlayed = `指した${playedText}には、`;
     const betterText = better ? `ここは${moveToKanji(better, 0, null, pos)}じゃ。` : '';
 
     // 詰まされる
@@ -514,16 +526,20 @@ ${playedLine}`;
     // 指した手の行き先をそのまま取り返されたか（「△同歩」の形か）
     const retaken = !!(threat && threat.to.x === move.to.x && threat.to.y === move.to.y);
     if (hangs && !retold) {
-      if (!taken || gained < PIECE_VALUE[hangs]) consequence = `その手は${threatText}と${PIECE_NAME[hangs]}を取られる。`;
+      if (exchange?.recapturable && exchange.gain <= 0 && threat) {
+        consequence = exchange.gain === 0
+          ? `${replyToPlayed}${threatText}の応手がある。取り返せば${tradeName(threat.piece, hangs)}になる。`
+          : `${replyToPlayed}${threatText}の応手がある。取り返せるので一方的な駒損ではないが、交換後の形勢まで読む必要がある。`;
+      } else if (!taken || gained < PIECE_VALUE[hangs]) consequence = `${replyToPlayed}${threatText}で${PIECE_NAME[hangs]}を取られる。`;
       else {
         // 同等以上の駒を取った後の取られ方は「駒損」ではなく「交換」
         const trade = tradeName(taken.type, hangs);
         consequence = retaken
-          ? `その手は${threatText}と取り返されて${trade}になる。`
-          : `その手は${threatText}と${PIECE_NAME[hangs]}を取られ、${trade}になる。`;
+          ? `${replyToPlayed}${threatText}で取り返されて${trade}になる。`
+          : `${replyToPlayed}${threatText}で${PIECE_NAME[hangs]}を取られ、${trade}になる。`;
       }
-    } else if (threat?.promote && !retold) consequence = `その手は${threatText}と成り込まれる。`;
-    else if (threatKind === 'check') consequence = `その手は${threatText}と王手されて苦しい。`;
+    } else if (threat?.promote && !retold) consequence = `${replyToPlayed}${threatText}で成り込まれる。`;
+    else if (threatKind === 'check') consequence = `${replyToPlayed}${threatText}で王手されて苦しい。`;
 
     const degree = level === 5 ? '決定的に' : 'はっきり';
     let why: string;
@@ -534,10 +550,11 @@ ${playedLine}`;
     } else if (missed) {
       // 「相手の次の手」より「指すべき手を逃した」ことを先に言う
       const tail = better && missed.text.includes(moveToKanji(better, 0, null, pos)) ? '' : betterText;
-      why = `${missed.text}${consequence ? `しかも${consequence}` : ''}${tail}`;
+      why = `${missed.text}${consequence}${tail}`;
     } else if (consequence) {
       // 取られる手なら、正解を指せばその駒が助かるかも言う（正解でも取られるままなら今まで通り「ここは▲○○じゃ」）
-      const rescue = hangs && better && threat ? rescueText(pos, better, move, threat.to, hangs) : '';
+      const rescue = hangs && better && threat && exchange && exchange.gain >= HANG_THRESHOLD
+        ? rescueText(pos, better, move, threat.to, hangs) : '';
       why = `${consequence}形勢が${degree}悪くなる。${rescue || betterText}`;
     } else {
       why = `その手は形勢を${degree}損ねる。${PURPOSE_MARK}`;
@@ -581,6 +598,8 @@ ${playedLine}`;
     pos.apply(move);
     const oppMate = findMateInOne(pos);
     const after = bestCaptureGain(pos, opp);
+    const mateText = oppMate ? moveToKanji(oppMate, opp, move, pos) : '';
+    const captureText = after.target ? moveToKanji(after.target, opp, move, pos) : '';
     pos.undo();
 
     if (oppMate && !this.ignored.has('mate')) {
@@ -588,7 +607,7 @@ ${playedLine}`;
         kind: 'mate-allowed',
         level: 5,
         headline: '詰まされるぞ！',
-        why: `その手では${moveToKanji(oppMate, 1)}で先手玉が詰む。自分の玉の周りに敵の駒が迫ったら、まず受けを考えるのじゃ。`,
+        why: `その手では${mateText}で先手玉が詰む。自分の玉の周りに敵の駒が迫ったら、まず受けを考えるのじゃ。`,
         better: null,
         ignoreKey: 'mate',
       };
@@ -603,8 +622,8 @@ ${playedLine}`;
       const moved = move.to.x === t.x && move.to.y === t.y;
       const name = `${sqToKanji(t)}の${PIECE_NAME[victimType]}`;
       const why = moved
-        ? `${name}は${moveToKanji(after.target, 1)}とタダで取られる。駒を動かす前に、その場所に相手の利きがないか必ず確かめるのじゃ。`
-        : `${name}が${moveToKanji(after.target, 1)}と取られてしまう。その手で守りが外れたのが分かるか。動かす前に、残された駒が大丈夫か見るのじゃ。`;
+        ? `${name}は${captureText}でタダで取られる。駒を動かす前に、その場所に相手の利きがないか必ず確かめるのじゃ。`
+        : `${name}が${captureText}で取られてしまう。その手で守りが外れたのが分かるか。動かす前に、残された駒が大丈夫か見るのじゃ。`;
       return { kind: 'blunder', level: net >= 8 ? 5 : 4, headline: '駒を取られるぞ！', why, better: null, ignoreKey: key };
     }
 

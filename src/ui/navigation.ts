@@ -9,8 +9,14 @@ export class ScreenHistory {
   private moving = false;
 
   constructor(private onBack: (screen: ScreenName) => void) {
+    const stale = history.state?.ojiji;
     history.replaceState({ ...history.state, ojiji: 0 }, '');
     window.addEventListener('popstate', this.onPop);
+    // 再読み込み前に積んだ同一URLの段を畳んでから、今回の画面履歴を始める。
+    if (Number.isInteger(stale) && stale > 0 && stale <= 2) {
+      this.moving = true;
+      history.go(-stale);
+    }
   }
 
   go(name: ScreenName): void {

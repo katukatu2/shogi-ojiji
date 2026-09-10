@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createRequire } from 'node:module';
 import { Engine, EngineFactory, MATE_SCORE, parseInfo, watchdogMs } from './engine';
+import { Position } from '../engine/position';
+import { moveToUsi, usiToMove } from '../engine/notation';
+import { ANALYZE_MS, SHALLOW_DEPTH } from '../style/judge';
 
 const require = createRequire(import.meta.url);
 
@@ -56,6 +59,29 @@ describe('やねうら王 WASM', () => {
     expect(list.length).toBe(3);
     expect(new Set(list.map((l) => l.bestmove)).size).toBe(3);
   });
+});
+
+it('本体の2スレッド・400ms・MultiPV 2でも合法な応手を返し、到達深さを記録する', async () => {
+  const engine = new Engine(require('@mizarjp/yaneuraou.k-p') as EngineFactory, 2);
+  await engine.init();
+  try {
+    const lines = [[], '7g7f 8c8d 2g2f 8d8e 2f2e 3c3d 3i3h 9c9d 3h2g 8e8f'.split(' ')];
+    const measured = [];
+    for (const moves of lines) {
+      const pos = Position.initial();
+      for (const move of moves) pos.apply(usiToMove(pos, move));
+      const legal = pos.legalMoves().map(moveToUsi);
+      const values = await engine.analyzeMulti(moves, { movetime: ANALYZE_MS, multipv: 2 });
+      expect(values).toHaveLength(2);
+      for (const value of values) {
+        expect(legal).toContain(value.bestmove);
+        expect(Number.isFinite(value.cp)).toBe(true);
+        expect(value.depth).toBeGreaterThan(0);
+      }
+      measured.push({ ply: moves.length, depth: values[0].depth, reference: values[0].depth < SHALLOW_DEPTH });
+    }
+    console.info('実条件での到達深さ（端末依存）:', measured);
+  } finally { engine.terminate(); }
 });
 
 // ===== 黙り込んだエンジンの扱い（WASM を使わず、偽のモジュールで確かめる）=====

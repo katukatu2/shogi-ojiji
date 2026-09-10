@@ -2,6 +2,8 @@
 
 作成日: 2026-09-10
 
+**Claude査読対応後の更新:** 原査読は [claude-review.md](claude-review.md)、18項目への回答は [codex-review-response.md](codex-review-response.md)、次にClaudeへ渡す文は [claude-rereview-request.md](claude-rereview-request.md)。以下の初期引き継ぎの件数・未実装一覧は履歴資料であり、現状は [release-audit.md](release-audit.md) を優先する。
+
 **Codex更新（2026-09-10）:** 以下は元の引き継ぎ時点の記録。現在の変更・検証・残作業は [release-audit.md](release-audit.md)、Claudeへの次の依頼は [claude-review-request.md](claude-review-request.md) を参照。今回からiPhone App Store版も対象、名称の「（仮）」は外し、ストア原案はCodexが作成済み。公開先・連絡先は引き続き未定。
 
 ## 1. 最新コードと保存先

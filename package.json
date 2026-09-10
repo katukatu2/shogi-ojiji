@@ -20,6 +20,7 @@
     "e2e": "playwright test",
     "e2e:pwa": "playwright test --config playwright.pwa.config.ts",
     "release:check": "node scripts/check-release.mjs",
+    "release:artifacts": "node scripts/check-release.mjs --artifacts-only",
     "store:shots": "node scripts/store-screenshots.mjs",
     "icons": "node scripts/build-icons.mjs"
   },

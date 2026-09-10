@@ -11,10 +11,16 @@ const files = readdirSync(root, { recursive: true, withFileTypes: true })
   .filter((file) => !['offline-assets.json', 'coi-serviceworker.js'].includes(file))
   .sort();
 const hash = createHash('sha256');
-for (const file of files) hash.update(file).update(readFileSync(resolve(root, file)));
+const sha256 = {};
+for (const file of files) {
+  const body = readFileSync(resolve(root, file));
+  hash.update(file).update(body);
+  sha256['./' + file] = createHash('sha256').update(body).digest('hex');
+}
+sha256['./'] = sha256['./index.html'];
 const worker = readFileSync('public/coi-serviceworker.js', 'utf8');
 hash.update(worker);
 const version = hash.digest('hex').slice(0, 20);
 writeFileSync(resolve(root, 'coi-serviceworker.js'), worker.replace("const VERSION = 'development';", `const VERSION = '${version}';`));
-writeFileSync(resolve(root, 'offline-assets.json'), JSON.stringify({ version, assets: ['./', ...files.map((file) => './' + file)] }, null, 2) + '\n');
+writeFileSync(resolve(root, 'offline-assets.json'), JSON.stringify({ version, assets: ['./', ...files.map((file) => './' + file)], sha256 }, null, 2) + '\n');
 console.log(`Offline release ${version}: ${files.length + 1} resources`);
