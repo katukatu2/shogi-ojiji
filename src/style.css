@@ -360,6 +360,12 @@ button {
   white-space: nowrap;
 }
 
+/* 終局後・思考中・ヒントの計算中は押せない */
+.controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* ===== オーバーレイ共通 ===== */
 .overlay {
   position: fixed;
@@ -928,6 +934,12 @@ button {
   margin-top: 2px;
 }
 
+/* 成績を保存できない端末への断り */
+.title-screen .rank.warn {
+  color: var(--accent);
+  opacity: 0.9;
+}
+
 .title-screen .credit a {
   color: inherit;
 }
@@ -1339,6 +1351,13 @@ raizo-rig {
   opacity: 0.75;
   margin-top: 6px;
   line-height: 1.5;
+}
+
+/* 昇級までの条件（強さの説明の下に 1 行） */
+.level-next {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 4px;
 }
 
 .task-result {

@@ -3,7 +3,7 @@ import { Move, HandPiece, HAND_ORDER, PIECE_KANJI, PIECE_NAME, PIECE_VALUE, Sq, 
 import { moveToKanji, moveToUsi, sqToKanji } from './engine/notation';
 import { chooseMove } from './ai/search';
 import { Engine, engineSupported, browserEngineFactory, Analysis } from './ai/engine';
-import { Judge, Verdict, Praise, Judgement, safeMove, bestCaptureGain, SHALLOW_DEPTH } from './style/judge';
+import { Judge, JudgeState, Verdict, Praise, Judgement, safeMove, bestCaptureGain, SHALLOW_DEPTH } from './style/judge';
 import { Style, PlanVariant } from './style/types';
 import { STYLES as ALL_STYLES, findStyle } from './style/index';
 import { formationOf } from './game/formation';
@@ -12,7 +12,7 @@ import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
 import {
   LEVELS, Level, levelById, loadProgress, saveProgress, pickTask, doneTaskSet, recordGame, Task, Promotion, GameResult,
-  titleOf, totals, badgesOf, BADGE_IDS, BADGE_LABEL, BADGE_CONDITION,
+  titleOf, totals, badgesOf, BADGE_IDS, BADGE_LABEL, BADGE_CONDITION, promotionLine, KAIDEN_CONDITION,
 } from './game/progress';
 import { keyMoments, momentCaption, momentLabel, MoveLog, KeyMoment, winProb } from './game/review';
 import { miniBoard, positionAfter } from './ui/miniboard';
@@ -56,6 +56,7 @@ interface Game {
   level: Level; // 難易度（オジジの強さ）
   task: Task; // 今日の課題
   logs: MoveLog[]; // 振り返り用の手の記録
+  judgeStates: JudgeState[]; // 各手を指す前の Judge の記憶（待ったで戻すため。手が確定するたびに 1 つ積む）
 }
 
 const app = document.getElementById('app')!;
@@ -87,6 +88,19 @@ function baseState(): RigState {
 
 // ===== 成績・難易度（端末に保存）=====
 let progress = loadProgress();
+
+// 成績を保存できる端末か（プライベートモードなどでは localStorage が例外を投げる）。
+// saveProgress は失敗しても例外を投げないので、書ける端末かをここで試して、タイトルで一言添える
+function canSaveProgress(): boolean {
+  try {
+    const key = 'ojiji.probe';
+    localStorage.setItem(key, '1');
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // ===== エンジン（やねうら王 WASM）=====
 type EngineState = 'idle' | 'loading' | 'ready' | 'unavailable';
@@ -138,10 +152,25 @@ function showEngineNotice(): void {
   document.body.append(box);
 }
 
+// 探索が続けて失敗したらエンジンを諦め、簡易判定に切り替える
+const ENGINE_GIVEUP = 3;
+function checkEngineFailures(): void {
+  if (!engine || engine.failures < ENGINE_GIVEUP) return;
+  engine.terminate();
+  engine = null;
+  game?.judge.setEvaluator(null);
+  engineState = 'unavailable';
+  updateEngineLabel();
+  showEngineNotice();
+}
+
 // 選択状態
 let selectedSq: Sq | null = null;
 let selectedHand: HandPiece | null = null;
 let hintMove: Move | null = null;
+// 「ヒント」で示した手（USI）。hintMove は段階 2・3 の「正解」の緑表示にも使うので、
+// 振り返りで「ヒントに従った手」を見分けるにはこちらを使う
+let hintedUsi: string | null = null;
 let legalCache: Move[] = [];
 let nodTimer: number | undefined;
 
@@ -214,6 +243,11 @@ function showTitle(): void {
     body.alt = '';
     body.decoding = 'async';
     body.src = 'raizo/body.webp';
+    // 体の画像が読めない環境では、体の分の空きを残さず顔だけにする
+    body.addEventListener('error', () => {
+      body.remove();
+      face.classList.remove('full');
+    });
     face.prepend(body);
   }
   rig.settle('idle');
@@ -244,6 +278,7 @@ function showTitle(): void {
   // 称号と通算。皆伝（戦法ごとに 1 つ）の数で称号が上がる
   const t = totals(progress);
   s.append(el('div', 'rank', `称号: ${titleOf(progress)}　${t.wins}勝 ${t.games}局・皆伝 ${t.kaiden}/${ALL_STYLES.length}`));
+  if (!canSaveProgress()) s.append(el('div', 'rank warn', 'この端末では成績を保存できない'));
 
   // 遊び方（折りたたみ。初回に一度読むもの）
   const how = el('details', 'howto');
@@ -327,6 +362,8 @@ function showSettings(): void {
     }
     levelBox.append(row);
     levelBox.append(el('div', 'level-desc', levelById(progress.level).description));
+    // 昇級までに何が要るか（師範代なら上は無い）。強さは今まで通り自由に選べる
+    levelBox.append(el('div', 'level-next', promotionLine(progress) ?? '師範代が最高じゃ'));
   };
   s.append(levelBox);
 
@@ -375,11 +412,14 @@ function showSettings(): void {
     text.append(el('div', '', style.plans[0]?.name ? `まずは${style.plans[0].name}。対局ごとに形を変えてくる。` : ''));
     const rec = progress.styles[style.id];
     text.append(el('div', 'pline', rec && rec.games > 0 ? `成績: ${rec.wins}勝 ${rec.games}局・ばかもん ${rec.scolded}回` : '成績: まだ指していない'));
-    text.append(el('div', 'pline', `次の課題: ${pickTask(style, done).text}`));
+    // 課題は対局数を種にして選ぶ（startGame と同じ計算。ここで見せた課題がそのまま対局に出る）
+    text.append(el('div', 'pline', `次の課題: ${pickTask(style, done, rec?.games ?? 0).text}`));
     // 次に取れる免状の条件（全部取っていれば出さない）
     const have = badgesOf(progress, style.id);
-    const nextBadge = BADGE_IDS.find((id) => !have.includes(id));
+    const nextBadge = BADGE_IDS.find((id) => !have.includes(id) && id !== 'kaiden');
     if (nextBadge) text.append(el('div', 'pline', `次の免状: ${BADGE_CONDITION[nextBadge]}`));
+    // 皆伝は最後の目標なので、初勝利や叱られず勝利を取る前からずっと見せておく
+    if (!have.includes('kaiden')) text.append(el('div', 'pline', `皆伝: ${KAIDEN_CONDITION}`));
     preview.append(text);
   };
   s.append(preview);
@@ -434,12 +474,15 @@ function startGame(style: Style): void {
     result: null,
     busy: false,
     level: levelById(progress.level),
-    task: pickTask(style, doneTaskSet(progress)),
+    // 課題は対局数を種にして選ぶ。対局設定の「次の課題」と同じ手順なので、見せた課題がそのまま出る
+    task: pickTask(style, doneTaskSet(progress), progress.styles[style.id]?.games ?? 0),
     logs: [],
+    judgeStates: [],
   };
   selectedSq = null;
   selectedHand = null;
   hintMove = null;
+  hintedUsi = null;
   buildGameScreen();
   render();
   showStartBanner(style);
@@ -475,6 +518,16 @@ let nodEl: HTMLElement;
 let promoEl: HTMLElement;
 let resultEl: HTMLElement;
 let momentEl: HTMLElement;
+let hintBtn: HTMLButtonElement | null = null;
+let mattaBtn: HTMLButtonElement | null = null;
+
+// ヒント・待ったの押せる／押せないを今の状況に合わせる（終局後・思考中・ヒントの計算中は押せない）
+function updateControls(): void {
+  const g = game;
+  const off = !g || g.result !== null || g.busy || hintBusy;
+  if (hintBtn) hintBtn.disabled = off;
+  if (mattaBtn) mattaBtn.disabled = off || g!.pos.moves.length < 2;
+}
 
 function updateEngineLabel(): void {
   if (!engineEl) return;
@@ -564,7 +617,12 @@ function buildGameScreen(): void {
   const controls = el('div', 'controls');
   const resign = el('button', '', '投了する');
   resign.addEventListener('click', () => {
-    if (!game || game.result || game.busy) return;
+    if (!game || game.result) return;
+    if (game.busy) {
+      // 思考中に投了されても無反応にはしない
+      showToast('thinking', '', 'オジジが考えておる。少し待て。', 2500, 'ui');
+      return;
+    }
     if (confirm('投了しますか？')) endGame('resign');
   });
   const quit = el('button', '', 'タイトルへ');
@@ -577,6 +635,8 @@ function buildGameScreen(): void {
   const matta = el('button', '', '待った');
   matta.title = '自分の手とオジジの手を一組戻す';
   matta.addEventListener('click', takeBack);
+  hintBtn = hint;
+  mattaBtn = matta;
   controls.append(hint, matta, resign, quit);
   g.append(controls);
 
@@ -657,10 +717,11 @@ function render(): void {
   } else {
     lastMoveEl.textContent = '先手番（あなた）';
   }
+  updateControls();
 }
 
 function onCellTap(x: number, y: number): void {
-  if (!game || game.busy || game.result || game.pos.turn !== 0) return;
+  if (!game || game.busy || game.result || hintBusy || game.pos.turn !== 0) return;
   const pos = game.pos;
   const p = pos.get(x, y);
 
@@ -697,7 +758,7 @@ function onCellTap(x: number, y: number): void {
 }
 
 function onHandTap(hp: HandPiece): void {
-  if (!game || game.busy || game.result || game.pos.turn !== 0) return;
+  if (!game || game.busy || game.result || hintBusy || game.pos.turn !== 0) return;
   selectedSq = null;
   selectedHand = selectedHand === hp ? null : hp;
   render();
@@ -723,7 +784,7 @@ function askPromotion(cands: Move[]): void {
 
 async function tryMove(m: Move): Promise<void> {
   const g = game;
-  if (!g || g.busy) return;
+  if (!g || g.busy || g.result || hintBusy) return;
   g.busy = true;
   render();
   // 振り返り用に、指す前の盤の様子を控えておく（駒を取る手か、取り返しか、王手を受けていたか、合法手の数）
@@ -732,17 +793,23 @@ async function tryMove(m: Move): Promise<void> {
   const recapture = prevMove !== null && sqEq(prevMove.to, m.to) && g.lastCaptureSq !== null && sqEq(g.lastCaptureSq, m.to);
   const inCheck = g.pos.inCheck(0);
   const legalCount = g.pos.legalMoves().length;
+  const hinted = hintedUsi !== null && hintedUsi === moveToUsi(m);
+  // 判定は Judge の記憶（一局に一度だけ叱るパターン、「このまま進む」で無視したキー）を書き換える。
+  // 指し直された手の記憶が残らないよう、指す前の状態を控えておく
+  const snap = g.judge.snapshot();
   let judgement: Judgement;
   try {
     judgement = await g.judge.judge(g.pos, m);
   } catch (err) {
     console.warn('judge failed', err);
+    checkEngineFailures();
     judgement = { verdict: null, praise: null };
   }
   if (game !== g) return; // 判定中にタイトルへ戻った
   const { verdict, praise } = judgement;
   // 表記は指す前の局面（g.pos）で作る。正解の手も同じ局面の手
   const better = verdict?.better ?? judgement.analysis?.better ?? null;
+  const logIndex = g.logs.length; // 指し直されたらこの記録を取り消す
   g.logs.push({
     ply: g.pos.moves.length + 1,
     movesBefore: g.pos.moves.map(moveToUsi),
@@ -756,6 +823,8 @@ async function tryMove(m: Move): Promise<void> {
     inCheck,
     legalCount,
     depth: judgement.analysis ? judgement.analysis.depth : null,
+    playedBest: judgement.analysis?.playedBest,
+    hinted,
     level: verdict ? verdict.level : 1,
     headline: verdict ? verdict.headline : '',
     why: verdict ? verdict.why : '',
@@ -767,6 +836,7 @@ async function tryMove(m: Move): Promise<void> {
     // 段階 2・3: 手は止めず、吹き出しで一言。オジジの手を緑で示す
     g.busy = false;
     hintMove = null;
+    g.judgeStates.push(snap);
     commit(m, null, () => showToast(verdict.level === 2 ? 'good' : 'doubtful', verdict.headline, verdict.why, 6000));
     hintMove = verdict.better;
     render();
@@ -782,9 +852,14 @@ async function tryMove(m: Move): Promise<void> {
     if (proceed) {
       g.judge.ignore(verdict.ignoreKey);
       hintMove = null;
+      g.judgeStates.push(snap);
       commit(m, null);
       lineTurn = turnId; // カットインがこの手の一言。続くオジジの独り言は出さない
     } else {
+      // 指さなかった手なので、記録も判定の記憶も指す前に戻す
+      // （指していない悪手が「今日の 3 手」に出ない。戻した手で課題が達成扱いにならない）
+      g.logs.splice(logIndex, 1);
+      g.judge.restore(snap);
       turnId++; // 指し直す手は新しい手として数える（カットインの一言に続く反応を出せるように）
       hintMove = verdict.better;
       render();
@@ -793,6 +868,7 @@ async function tryMove(m: Move): Promise<void> {
   }
   g.busy = false;
   hintMove = null;
+  g.judgeStates.push(snap);
   commit(m, praise);
 }
 
@@ -818,6 +894,7 @@ function ruleEnding(pos: Position): { result: Result; reason: string } | null {
 function commit(m: Move, praise: Praise | null, line?: () => void): void {
   if (!game) return;
   turnId++;
+  hintedUsi = null; // 手が確定したので、ヒントの手はここで忘れる
   const captured = game.pos.get(m.to.x, m.to.y);
   game.lastMoveKanji = kanjiBefore(game.pos, m, 0);
   game.pos.apply(m);
@@ -830,7 +907,8 @@ function commit(m: Move, praise: Praise | null, line?: () => void): void {
     showNod(praise);
   } else if (captured && PIECE_VALUE[captured.type] >= 5 && captured.type !== 'OU') {
     showToast('doubtful', 'オジジ', `むう、${PIECE_NAME[captured.type]}を取られたか。`, 2500, 'mutter');
-  } else if (game.pos.inCheck(1)) {
+  } else if (game.pos.inCheck(1) && !game.pos.isGameOver()) {
+    // 詰みなら「受けてみせよう」は言わない（言いかけて消える）
     showToast('thinking', 'オジジ', '王手か。受けてみせよう。', 2500, 'mutter');
   }
   render();
@@ -870,8 +948,10 @@ async function npcMove(): Promise<void> {
     }
   } catch (err) {
     console.warn('npc move failed', err);
+    checkEngineFailures();
   }
-  if (!m) m = chooseMove(pos, { depth: 2, timeMs: 1200, noise: 0.5 });
+  // 簡易 AI はメインスレッドで動くので、待たせすぎないよう時間を切る
+  if (!m) m = chooseMove(pos, { depth: 2, timeMs: 300, noise: 0.5 });
   g.busy = false;
   if (!m) {
     endGame('win');
@@ -937,14 +1017,23 @@ async function engineMove(pos: Position): Promise<Move | null> {
   return legal.find((l) => moveToUsi(l) === pick.bestmove) ?? legal.find((l) => moveToUsi(l) === list[0].bestmove) ?? null;
 }
 
-// 待った: 自分の手とオジジの手を一組戻す
+// 待った: 自分の手とオジジの手を一組戻す。
+// 二度タップで 4 手戻らないよう、一組戻したあとしばらくは受け付けない
+const MATTA_GAP_MS = 500;
+let lastTakeBack = -1e9;
 function takeBack(): void {
   const g = game;
-  if (!g || g.busy || g.result || g.pos.turn !== 0 || g.pos.moves.length < 2) return;
+  if (!g || g.busy || g.result || hintBusy || g.pos.turn !== 0 || g.pos.moves.length < 2) return;
+  if (performance.now() - lastTakeBack < MATTA_GAP_MS) return;
+  lastTakeBack = performance.now();
   g.pos.undo();
   g.pos.undo();
   g.matta++;
   turnId++;
+  // 戻した手の記録と判定の記憶も戻す（戻した手で課題が達成扱いにならないように）
+  g.logs = g.logs.filter((l) => l.ply <= g.pos.moves.length);
+  const s = g.judgeStates.pop();
+  if (s) g.judge.restore(s);
   g.lastMove = g.pos.moves.length > 0 ? g.pos.moves[g.pos.moves.length - 1] : null;
   // 戻った局面の最終手（オジジの手）の表記と「駒を取った地点」は、その手を指す前の局面が要るので、
   // もう一手戻して作り、指し直す（Position の千日手の記録は undo で切り詰められ、次の判定で埋め直される）
@@ -961,30 +1050,42 @@ function takeBack(): void {
   selectedSq = null;
   selectedHand = null;
   hintMove = null;
+  hintedUsi = null;
   render();
   showToast('thinking', '待ったか', 'まあ、勉強のうちじゃ。今度はよく考えよ。', 3000, 'ui');
   g.judge.prefetch(g.pos);
 }
 
 // ヒント: オジジならどう指すかを盤面に示す（相手の手を待つ間に計算済みの最善手を使う）
+// 計算を待つ間はフラグを立て、二度押し・着手・待ったを止める。
+// 待たせた結果が古い局面のものなら（局面の鍵が変わっていたら）捨てる
+let hintBusy = false;
 async function showHint(): Promise<void> {
   const g = game;
-  if (!g || g.busy || g.result || g.pos.turn !== 0) return;
+  if (!g || g.busy || g.result || hintBusy || g.pos.turn !== 0) return;
   if (!engine) {
     showToast('thinking', 'ヒント', 'この環境では将棋エンジンが使えないので、ヒントは出せん。', 4000, 'ui');
     return;
   }
+  const key = g.pos.key();
+  hintBusy = true;
+  updateControls();
   try {
     const a = await g.judge.evalOf(g.pos);
-    if (game !== g || !a.bestmove) return;
+    if (game !== g || g.result || g.pos.key() !== key || !a.bestmove) return;
     const m = safeMove(g.pos, a.bestmove);
     if (!m) return;
     g.hints++;
     hintMove = m;
+    hintedUsi = moveToUsi(m);
     render();
     showToast('thinking', 'ヒント', `ワシなら${moveToKanji(m, 0, null, g.pos)}じゃ。理由は自分で考えよ。`, 5000, 'ui');
   } catch (err) {
     console.warn('hint failed', err);
+    checkEngineFailures();
+  } finally {
+    hintBusy = false;
+    updateControls();
   }
 }
 
@@ -1098,6 +1199,7 @@ const RULE_ENDING_NOTE: Record<string, string> = {
 // 対局を終える。reason があるときは詰みではなく、千日手・持将棋・手数上限による終局
 function endGame(result: Result, reason?: string): void {
   if (!game) return;
+  if (game.result) return; // 二重に呼ばれても一局分しか記録しない
   stopSfx();
   game.result = result;
   game.busy = false;
@@ -1118,9 +1220,14 @@ function endGame(result: Result, reason?: string): void {
   saveProgress(progress);
   lastOutcome = { taskDone, promotion, newBadges };
   hintMove = null;
+  hintedUsi = null;
   selectedSq = null;
   selectedHand = null;
   render();
+  // 終局の顔は詰みの帯が出ている間から。勝ちは驚き、負けは湯呑みで一服（勝ち誇り）
+  if (result === 'win') rig.play('surprised', () => rig.settle('idle'));
+  else if (result === 'lose') rig.play('good', () => rig.settle('idle'));
+  else rig.settle('idle');
   if (result === 'resign') {
     showResult(result);
     return;
@@ -1165,8 +1272,7 @@ function showResult(result: Result): void {
   faceInto(face, result === 'win' ? 'shocked' : 'normal');
   nodEl.hidden = true;
   toastSerial++;
-  if (result === 'win') rig.play('surprised', () => rig.settle('idle'));
-  else rig.settle('idle');
+  // 勝ち負けの反応は endGame で鳴らしてある（ここで鳴らすと二重になる）
   panel.append(face);
   panel.append(el('h2', '', titles[result]));
   panel.append(el('p', 'oneword', closingWord(game, result)));
