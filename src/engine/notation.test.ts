@@ -22,6 +22,11 @@ function drop(piece: HandPiece, sq: string): Move {
   return { from: null, to: usiToSq(sq), piece, promote: false };
 }
 
+// 盤上の駒を動かす手（USI の座標で書く）
+function step(piece: PieceType, from: string, to: string, promote = false): Move {
+  return { from: usiToSq(from), to: usiToSq(to), piece, promote };
+}
+
 describe('moveToKanji の「打」', () => {
   it('局面を渡さなければ、打つ手には今まで通り「打」を付ける（後方互換）', () => {
     expect(moveToKanji(drop('FU', '3d'), 0)).toBe('▲３四歩打');
@@ -142,5 +147,59 @@ describe('moveToKanji の「打」', () => {
     put(pos, '4e', 'GI', 0); // ４五の銀が３四へ動ける
     expect(usiToKanji('S*3d', pos, 0)).toBe('▲３四銀打');
     expect(usiToKanji('5i5h', pos, 0)).toBe('▲５八玉');
+  });
+});
+
+describe('moveToKanji の「不成」', () => {
+  it('成れるのに成らなければ「不成」、成れば「成」（局面は要らない）', () => {
+    expect(moveToKanji(step('KA', '8h', '2b'), 0)).toBe('▲２二角不成');
+    expect(moveToKanji(step('KA', '8h', '2b', true), 0)).toBe('▲２二角成');
+  });
+
+  it('銀が敵陣へ入る手（▲３三銀不成／▲３三銀成）', () => {
+    expect(moveToKanji(step('GI', '3d', '3c'), 0)).toBe('▲３三銀不成');
+    expect(moveToKanji(step('GI', '3d', '3c', true), 0)).toBe('▲３三銀成');
+  });
+
+  it('敵陣から出る手にも付く（動かす前が敵陣なら成れる）', () => {
+    expect(moveToKanji(step('KA', '2b', '8h'), 0)).toBe('▲８八角不成');
+    expect(moveToKanji(step('GI', '3c', '3d'), 0)).toBe('▲３四銀不成');
+  });
+
+  it('敵陣に掛からない手には付かない', () => {
+    expect(moveToKanji(step('GI', '5h', '5g'), 0)).toBe('▲５七銀');
+    expect(moveToKanji(step('FU', '7g', '7f'), 0)).toBe('▲７六歩');
+    expect(moveToKanji(step('GI', '3e', '3d'), 0)).toBe('▲３四銀'); // 四段目は敵陣の一つ手前
+  });
+
+  it('成れない駒（金・玉）には付かない', () => {
+    expect(moveToKanji(step('KI', '3c', '3b'), 0)).toBe('▲３二金');
+    expect(moveToKanji(step('OU', '3c', '3b'), 0)).toBe('▲３二玉');
+  });
+
+  it('既に成っている駒には付かない', () => {
+    expect(moveToKanji(step('TO', '3c', '3b'), 0)).toBe('▲３二と金');
+    expect(moveToKanji(step('NG', '3c', '3b'), 0)).toBe('▲３二成銀');
+    expect(moveToKanji(step('UM', '3c', '3b'), 0)).toBe('▲３二馬');
+    expect(moveToKanji(step('RY', '3c', '3b'), 0)).toBe('▲３二龍');
+  });
+
+  it('後手は七〜九段が敵陣', () => {
+    expect(moveToKanji(step('GI', '7f', '7g'), 1)).toBe('△７七銀不成');
+    expect(moveToKanji(step('GI', '7g', '7f'), 1)).toBe('△７六銀不成'); // 七段目から出る手
+    expect(moveToKanji(step('GI', '7e', '7f'), 1)).toBe('△７六銀'); // 六段目は敵陣の一つ手前
+    expect(moveToKanji(step('GI', '3d', '3c'), 1)).toBe('△３三銀'); // 先手の敵陣では成れない
+  });
+
+  it('打つ手には付かない（打った駒は成れない）', () => {
+    const pos = bare();
+    pos.hands[0].GI = 1;
+    expect(moveToKanji(drop('GI', '3c'), 0)).toBe('▲３三銀打');
+    expect(moveToKanji(drop('GI', '3c'), 0, null, pos)).toBe('▲３三銀');
+  });
+
+  it('「同」と一緒でも付く', () => {
+    const prev = step('GI', '2c', '3c');
+    expect(moveToKanji(step('KA', '8h', '3c'), 0, prev)).toBe('▲同角不成');
   });
 });

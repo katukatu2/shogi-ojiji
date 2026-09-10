@@ -1,4 +1,4 @@
-import { Move, PieceType, HandPiece, PIECE_KANJI, Sq } from './types';
+import { Move, PieceType, HandPiece, PIECE_KANJI, PROMOTE_MAP, Sq } from './types';
 import { Position } from './position';
 
 // USI 形式: "7g7f", "8h2b+", "P*5e"
@@ -57,7 +57,14 @@ function needsDropMark(m: Move, color: 0 | 1, pos: Position): boolean {
   return p.legalMoves().some((c) => c.from !== null && c.piece === m.piece && c.to.x === m.to.x && c.to.y === m.to.y);
 }
 
-// 表示用の棋譜表記 "▲７六歩" など（同・打・成に対応。同種の駒の区別は簡略化）
+// 成れる手を成らなかったか（「不成」が要るか）。成れない駒（金・玉）と既に成っている駒（と金など）には
+// PROMOTE_MAP が無いので付かない。成れるのは動かす前か動いた先が敵陣のとき
+function isDeclined(m: Move, color: 0 | 1): boolean {
+  if (!m.from || m.promote || PROMOTE_MAP[m.piece as PieceType] === undefined) return false;
+  return Position.inPromotionZone(m.from.y, color) || Position.inPromotionZone(m.to.y, color);
+}
+
+// 表示用の棋譜表記 "▲７六歩" など（同・打・成・不成に対応。同種の駒の区別は簡略化）
 // pos（その手を指す前の局面）を渡すと、打つ手の「打」は慣習どおり同種の駒が動けるときだけ付ける。
 // 渡さなければ従来どおり打つ手には常に「打」を付ける
 export function moveToKanji(m: Move, color: 0 | 1, prev?: Move | null, pos?: Position | null): string {
@@ -67,6 +74,7 @@ export function moveToKanji(m: Move, color: 0 | 1, prev?: Move | null, pos?: Pos
   let suffix = '';
   if (m.from === null) suffix = !pos || needsDropMark(m, color, pos) ? '打' : '';
   else if (m.promote) suffix = '成';
+  else if (isDeclined(m, color)) suffix = '不成';
   return `${mark}${dest}${piece}${suffix}`;
 }
 
