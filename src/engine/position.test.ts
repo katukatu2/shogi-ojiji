@@ -257,27 +257,32 @@ describe('千日手', () => {
 });
 
 describe('持将棋', () => {
-  // 両方の玉が敵陣に入り、先手・後手ともちょうど 24 点の局面
+  // 宣言法の条件（両玉が敵陣・手番側は王手されていない・玉以外の駒が敵陣に 10 枚以上）を
+  // 両方が満たし、先手・後手ともちょうど 24 点の局面。先手番
   function enteredBoth(): Position {
     const pos = Position.initial();
     pos.board.fill(null);
     pos.set(8, 2, { type: 'OU', color: 0 }); // １三玉（敵陣）
     pos.set(0, 6, { type: 'OU', color: 1 }); // ９七玉（敵陣）
-    // 先手: 盤上の香 2 枚（2 点）＋持ち駒の飛角（10 点）・金銀桂 12 枚（12 点）= 24 点
-    pos.set(8, 8, { type: 'KY', color: 0 });
-    pos.set(0, 8, { type: 'KY', color: 0 });
-    pos.hands[0] = { FU: 0, KY: 0, KE: 4, GI: 4, KI: 4, KA: 1, HI: 1 };
-    // 後手: 盤上の龍・馬（10 点）・と金 2 枚（2 点）＋持ち駒の歩 12 枚（12 点）= 24 点
-    pos.set(4, 4, { type: 'RY', color: 1 });
-    pos.set(3, 4, { type: 'UM', color: 1 });
-    pos.set(2, 7, { type: 'TO', color: 1 });
-    pos.set(6, 7, { type: 'TO', color: 1 });
-    pos.hands[1] = { FU: 12, KY: 0, KE: 0, GI: 0, KI: 0, KA: 0, HI: 0 };
+    // 先手: 敵陣（一・二段）に金 4・銀 4・飛・角の 10 枚（18 点）＋持ち駒の桂 4・香 2（6 点）= 24 点
+    for (const x of [0, 1, 2, 3]) pos.set(x, 0, { type: 'KI', color: 0 });
+    for (const x of [4, 5, 6, 7]) pos.set(x, 0, { type: 'GI', color: 0 });
+    pos.set(6, 1, { type: 'HI', color: 0 });
+    pos.set(7, 1, { type: 'KA', color: 0 });
+    pos.hands[0] = { FU: 0, KY: 2, KE: 4, GI: 0, KI: 0, KA: 0, HI: 0 };
+    // 後手: 敵陣（七・八・九段）に龍・馬・と金 4・歩 4 の 10 枚（18 点）＋持ち駒の歩 6（6 点）= 24 点
+    pos.set(1, 8, { type: 'RY', color: 1 });
+    pos.set(2, 8, { type: 'UM', color: 1 });
+    for (const x of [3, 4, 5, 6]) pos.set(x, 8, { type: 'TO', color: 1 });
+    for (const x of [1, 2, 3, 4]) pos.set(x, 7, { type: 'FU', color: 1 });
+    pos.hands[1] = { FU: 6, KY: 0, KE: 0, GI: 0, KI: 0, KA: 0, HI: 0 };
     return pos;
   }
 
-  it('両方の玉が敵陣に入り、両方 24 点以上なら引き分け', () => {
+  it('宣言の条件がそろい、両方 24 点以上なら引き分け', () => {
     const pos = enteredBoth();
+    expect(pos.inCheck(0)).toBe(false);
+    expect(pos.inCheck(1)).toBe(false);
     expect(pos.enteringKing()).toBe('draw');
     pos.hands[0].FU = 3;
     expect(pos.enteringKing()).toBe('draw');
@@ -285,11 +290,42 @@ describe('持将棋', () => {
 
   it('片方が 24 点未満ならその側の負け（玉は数えない）', () => {
     const pos = enteredBoth();
-    pos.hands[1].FU = 11; // 後手 23 点
+    pos.hands[1].FU = 5; // 後手 23 点
     expect(pos.enteringKing()).toBe('gote-loses');
-    pos.hands[1].FU = 12;
-    pos.set(0, 8, null); // 先手 23 点
+    pos.hands[1].FU = 6;
+    pos.hands[0].KY = 1; // 先手 23 点
     expect(pos.enteringKing()).toBe('sente-loses');
+  });
+
+  it('手番側が王手されていたら判定しない（王手されている側は宣言できない）', () => {
+    const pos = enteredBoth();
+    pos.set(8, 0, { type: 'KY', color: 1 }); // １一香が１三の先手玉に王手
+    expect(pos.inCheck(0)).toBe(true);
+    expect(pos.enteringKing()).toBe('none');
+    // 手番が後手に移れば、後手は王手されていないので判定する
+    pos.turn = 1;
+    expect(pos.inCheck(1)).toBe(false);
+    expect(pos.enteringKing()).toBe('draw');
+  });
+
+  it('敵陣の駒が 9 枚なら判定しない（点数が足りなくても言わない）', () => {
+    const pos = enteredBoth();
+    pos.set(7, 0, null);
+    pos.set(7, 3, { type: 'GI', color: 0 }); // 銀を２四へ動かす（点数は 24 点のまま、敵陣は 9 枚）
+    expect(pos.enteringKing()).toBe('none');
+    pos.hands[1].FU = 0; // 後手が 18 点でも言わない
+    expect(pos.enteringKing()).toBe('none');
+    // 銀を敵陣へ戻せば 10 枚に戻る
+    pos.set(7, 3, null);
+    pos.set(7, 0, { type: 'GI', color: 0 });
+    expect(pos.enteringKing()).toBe('gote-loses');
+  });
+
+  it('後手の敵陣の駒が 9 枚でも判定しない', () => {
+    const pos = enteredBoth();
+    pos.set(4, 7, null);
+    pos.set(4, 5, { type: 'FU', color: 1 }); // ５六へ（敵陣の外）
+    expect(pos.enteringKing()).toBe('none');
   });
 
   it('片方の玉しか敵陣に入っていなければ判定しない', () => {
@@ -304,6 +340,16 @@ describe('持将棋', () => {
     pos.set(0, 5, { type: 'OU', color: 1 }); // ９六玉
     expect(pos.enteringKing()).toBe('none');
     expect(Position.initial().enteringKing()).toBe('none');
+  });
+
+  it('玉が敵陣に入った瞬間には成立しない（駒が付いていっていないので対局は続く）', () => {
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(8, 2, { type: 'OU', color: 0 }); // １三玉
+    pos.set(0, 6, { type: 'OU', color: 1 }); // ９七玉
+    pos.hands[0] = { FU: 0, KY: 0, KE: 0, GI: 0, KI: 4, KA: 2, HI: 2 }; // 24 点
+    pos.hands[1] = { FU: 9, KY: 0, KE: 0, GI: 0, KI: 0, KA: 0, HI: 3 }; // 24 点
+    expect(pos.enteringKing()).toBe('none');
   });
 });
 

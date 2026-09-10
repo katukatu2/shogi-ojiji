@@ -43,6 +43,8 @@ export type RuleEnding = 'none' | 'draw' | 'sente-loses' | 'gote-loses';
 const REPETITION_COUNT = 4;
 // 持将棋（24 点法）の点数。飛・角とその成駒は 5 点、玉以外の他の駒は 1 点
 const ENTERING_KING_POINTS = 24;
+// 持将棋の宣言に必要な、敵陣に入っている玉以外の駒の枚数
+const ENTERING_KING_PIECES = 10;
 const BIG_PIECES: ReadonlySet<PieceType> = new Set<PieceType>(['HI', 'KA', 'RY', 'UM']);
 
 const SFEN_LETTER: Record<PieceType, string> = {
@@ -427,16 +429,27 @@ export class Position {
     return 'draw';
   }
 
-  // 持将棋（入玉）: 両方の玉が敵陣に入っているときだけ判定する。24 点法で両方 24 点以上なら引き分け、
-  // 24 点未満の側が負け（駒が全部あれば合計 54 点なので、両方 24 点未満にはならない）
+  // 持将棋（入玉）: 玉が敵陣に入っただけでは終わらない。宣言法の条件に寄せて、
+  //   ・両方の玉が敵陣にいる
+  //   ・手番側が王手されていない（王手されている側は宣言できない）
+  //   ・両方の側が玉以外の駒を敵陣に 10 枚以上入れている
+  // の三つがそろったときだけ 24 点法で判定する。そろわなければ 'none'（対局は続く）。
+  // 24 点法では両方 24 点以上なら引き分け、24 点未満の側が負け
+  //（駒が全部あれば合計 54 点なので、両方 24 点未満にはならない）
   enteringKing(): RuleEnding {
     const sente = this.findKing(0);
     const gote = this.findKing(1);
     if (!sente || !gote || !Position.inPromotionZone(sente.y, 0) || !Position.inPromotionZone(gote.y, 1)) return 'none';
+    if (this.inCheck(this.turn)) return 'none';
     const points: [number, number] = [0, 0];
-    for (const c of this.board) {
-      if (c && c.type !== 'OU') points[c.color] += BIG_PIECES.has(c.type) ? 5 : 1;
+    const inZone: [number, number] = [0, 0]; // 敵陣にいる玉以外の駒の枚数
+    for (let i = 0; i < 81; i++) {
+      const c = this.board[i];
+      if (!c || c.type === 'OU') continue;
+      points[c.color] += BIG_PIECES.has(c.type) ? 5 : 1;
+      if (Position.inPromotionZone(Math.floor(i / 9), c.color)) inZone[c.color]++;
     }
+    if (inZone[0] < ENTERING_KING_PIECES || inZone[1] < ENTERING_KING_PIECES) return 'none';
     for (const color of [0, 1] as Color[]) {
       const hand = this.hands[color];
       for (const hp of Object.keys(hand) as HandPiece[]) {
