@@ -26,6 +26,15 @@ jobs:
         run: npm run e2e
       - id: pwa
         run: npm run e2e:pwa
+      - id: fullgame
+        timeout-minutes: 20
+        run: npm run e2e:fullgame
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.fullgame.outcome != 'skipped' }}
+        with:
+          name: product-fullgame
+          path: logs/fullgame
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: ${{ failure() && steps.e2e.outcome == 'failure' }}
         with:
@@ -40,10 +49,7 @@ jobs:
           retention-days: 7
       # 台詞の点検: 各戦法 2 局ずつ自動対局してエラーが出ないことだけ確かめる
       - id: selfplay
-        run: |
-          for s in yagura shikenbisha kakugawari bougin nakabisha; do
-            npx vite-node scripts/selfplay.ts -- --style $s --games 2 --plies 60 --out logs/ci-$s.jsonl
-          done
+        run: npm run selfplay -- --all-styles --games 2 --plies 60 --out logs/ci-all-styles.jsonl
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.selfplay.outcome != 'skipped' }}
         with:

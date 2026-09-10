@@ -170,12 +170,24 @@ npm run cap:ios          # build → sync → Xcode を開く（ios/ 生成済�
 
 ```bash
 npx vite-node scripts/selfplay.ts -- --style shikenbisha --games 25 --start 0 --seed 11 --out logs/run1.jsonl
+npm run selfplay -- --all-styles --games 2 --plies 60 --out logs/ci-all-styles.jsonl
 PYTHONIOENCODING=utf-8 python scripts/selfplay-report.py 'logs/run*.jsonl' > logs/report.txt
 ```
 
 - 実機と同じ判定コードとエンジンを Node で動かし、戦型スクリプト（棒銀・四間飛車・中飛車・角換わり・居玉突撃など 12 種）＋弱めたエンジンでプレイヤー側を指す。
 - 判定・独り言・頷きを 1 行 1 件の JSON で記録し、レポートで文型ごとの回数、疑わしい判定（正解の形勢が指した手以下、段階 2 なのに互角以下など）、段階ごとのサンプルを出す。
-- 4 プロセス並列で 100 局が 10 分弱。`logs/` は git 管理外。CI（`.github/workflows/ci.yml`）では各戦法 2 局のスモークを回す。
+- `--style` の不明なID・値の欠落は、エンジンを起動せず既存ログも上書きせずに終了コード1を返す。`--all-styles` はアプリの `STYLES` 一覧を直接使い、登録された全戦法を順に処理する。個別指定との併用はできない。
+- 4 プロセス並列で 100 局が 10 分弱。`logs/` は git 管理外。CI（`.github/workflows/ci.yml`）は全戦法を各2局・60手まで試す設定。例外が起きても後続を試し、1件でも失敗すれば終了コード1を返す。ログには戦法IDも残る。CI自体はまだ未実行。
+
+## 製品を詰みまで操作する試験
+
+```bash
+npm run build
+npx playwright install chromium
+npm run e2e:fullgame
+```
+
+ビルド済み `dist/` の配信サーバーを自動で起動・終了し、Chromiumで初期局面から詰みまで盤と持ち駒を操作する。開発API・局面・進捗の注入は使わない。結果画面と保存を検査し、棋譜・画像・レポートを `logs/fullgame/` に保存する。失敗時にはトレースも残す。再試行は0回、1局15分の上限。CIにも同じコマンドを登録し、成功・失敗どちらでも記録を保存する。`npm test` は単体試験、長い製品対局はこのコマンドで分けて実行する。
 
 ## 戦法を追加する
 

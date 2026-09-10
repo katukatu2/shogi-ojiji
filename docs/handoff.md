@@ -2,6 +2,8 @@
 
 作成日: 2026-09-10
 
+**現在の更新:** `edd8c6e` に対する [網羅の査読](claude-coverage-review.md) を受領。独立評価は指導8・ゲーム7・リリース7・品質保証7。不明な戦法IDの拒否、アプリの全戦法を使うCI設定、製品通し試験のCI登録と自動終了を追加した。今回の確認は単体331件・PWA24件・製品通し1件（63手）成功、全戦法10局。詳細は [今回の回答](codex-coverage-response.md)、次の限定依頼は [claude-ci-gate-review-request.md](claude-ci-gate-review-request.md)。CI実行・APK/IPA・実機等は引き続き未完了。以下は過去の更新履歴。
+
 **最新の更新:** `baebaeb` までの [追加査読](claude-followup-review.md) で、新規欠陥なし・全領域7を受領。その後の4戦法採取、製品の詰みまでの通し確認、囲い・角交換課題・CIの失敗検出の修正は [coverage-verification.md](coverage-verification.md)。次の依頼は [claude-coverage-review-request.md](claude-coverage-review-request.md)。Androidビルドを試行したがJavaのAccessDeniedで停止し、APKは未生成。以下の旧引き継ぎは履歴資料。
 
 **最新の再査読対応:** `bafb87f` に対する原文は [claude-rereview.md](claude-rereview.md)、今回の修正は [codex-rereview-response.md](codex-rereview-response.md)、次の限定確認依頼は [claude-followup-review-request.md](claude-followup-review-request.md)。現状の検証件数・残条件は [release-audit.md](release-audit.md) を参照。直前の独立評価は指導7・ゲーム7・リリース6・品質保証7。

@@ -13,6 +13,7 @@ import { chooseMove } from '../src/ai/search';
 import { Judge, bestCaptureGain, safeMove } from '../src/style/judge';
 import { choosePlanMove, planApplies, planComment, PlanState } from '../src/style/plan';
 import { STYLES, findStyle } from '../src/style/index';
+import type { Style } from '../src/style/types';
 
 const require = createRequire(import.meta.url);
 
@@ -56,11 +57,6 @@ const SEED = Number(arg('seed', '1'));
 const OUT = arg('out', 'logs/selfplay.jsonl');
 const MAX_PLIES = Number(arg('plies', '120'));
 const JUDGE_MS = Number(arg('judgeMs', '80'));
-const STYLE_ID = arg('style', 'yagura');
-const STYLE = findStyle(STYLE_ID) ?? STYLES[0];
-
-mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, '');
 const log = (o: Record<string, unknown>) => appendFileSync(OUT, JSON.stringify(o) + '\n');
 
 async function playerMove(pos: Position, engine: Engine, opening: Opening, random: () => number, ply: number): Promise<Move> {
@@ -84,11 +80,11 @@ async function playerMove(pos: Position, engine: Engine, opening: Opening, rando
   return cands[0];
 }
 
-async function ojijiMove(pos: Position, engine: Engine, judge: Judge, variant: string[], state: PlanState, random: () => number): Promise<Move | null> {
+async function ojijiMove(pos: Position, engine: Engine, judge: Judge, variant: string[], state: PlanState, random: () => number, style: Style): Promise<Move | null> {
   let m: Move | null = null;
   if (planApplies(pos)) {
     const current = await judge.evalOf(pos).catch(() => undefined);
-    m = await choosePlanMove(pos, variant, state, { evaluator: engine, current, analyzeMs: JUDGE_MS, reactions: STYLE.reactions, tolerance: STYLE.planTolerance });
+    m = await choosePlanMove(pos, variant, state, { evaluator: engine, current, analyzeMs: JUDGE_MS, reactions: style.reactions, tolerance: style.planTolerance });
   }
   if (!m) {
     const list = await engine.analyzeMulti(pos.moves.map(moveToUsi), { depth: 6, multipv: 3 });
@@ -103,11 +99,11 @@ async function ojijiMove(pos: Position, engine: Engine, judge: Judge, variant: s
   return m;
 }
 
-async function playGame(id: number, engine: Engine, random: () => number): Promise<void> {
+async function playGame(id: number, engine: Engine, random: () => number, style: Style): Promise<void> {
   const opening = OPENINGS[id % OPENINGS.length];
-  const variant = STYLE.plans[Math.floor(random() * STYLE.plans.length)];
+  const variant = style.plans[Math.floor(random() * style.plans.length)];
   const pos = Position.initial();
-  const judge = new Judge(engine, { analyzeMs: JUDGE_MS, bad: STYLE.badPatterns, good: STYLE.goodPatterns });
+  const judge = new Judge(engine, { analyzeMs: JUDGE_MS, bad: style.badPatterns, good: style.goodPatterns });
   const state: PlanState = { done: new Set() };
   let lastWhisper = -100;
   let lastCheck = -100;
@@ -119,7 +115,7 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
     let m = await playerMove(pos, engine, opening, random, pos.moves.length);
     const before = pos.moves.map(moveToUsi).join(' ');
     const j = await judge.judge(pos, m);
-    const base = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before, move: moveToKanji(m, 0, null, pos), usi: moveToUsi(m) };
+    const base = { game: id, style: style.id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before, move: moveToKanji(m, 0, null, pos), usi: moveToUsi(m) };
     if (j.verdict) {
       const v = j.verdict;
       const redo = v.level >= 4 && random() < 0.5 && v.better !== null;
@@ -142,12 +138,12 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
     if (pos.isGameOver()) { result = 'win'; break; }
 
     // 後手（オジジ）
-    const om = await ojijiMove(pos, engine, judge, variant.moves, state, random);
+    const om = await ojijiMove(pos, engine, judge, variant.moves, state, random, style);
     if (!om) { result = 'win'; break; }
-    const obase = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before: pos.moves.map(moveToUsi).join(' '), move: moveToKanji(om, 1, null, pos), usi: moveToUsi(om) };
+    const obase = { game: id, style: style.id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before: pos.moves.map(moveToUsi).join(' '), move: moveToKanji(om, 1, null, pos), usi: moveToUsi(om) };
     pos.apply(om);
     if (pos.isGameOver()) { result = 'lose'; break; }
-    const comment = planComment(STYLE, pos, om);
+    const comment = planComment(style, pos, om);
     if (comment) log({ ...obase, type: 'mutter', why: comment });
     else if (pos.inCheck(0)) {
       if (pos.moves.length - lastCheck >= 6) {
@@ -163,26 +159,39 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
       }
     }
   }
-  log({ game: id, style: STYLE.id, opening: opening.name, variant: variant.name, type: 'result', result, plies: pos.moves.length, ...counts });
-  console.log(`game ${id} ${opening.name}/${variant.name} ${result} ${pos.moves.length}ply scold=${counts.scold} bad=${counts.bad} l3=${counts.l3} l2=${counts.l2} praise=${counts.praise}`);
+  log({ game: id, style: style.id, opening: opening.name, variant: variant.name, type: 'result', result, plies: pos.moves.length, ...counts });
+  console.log(`${style.id} game ${id} ${opening.name}/${variant.name} ${result} ${pos.moves.length}ply scold=${counts.scold} bad=${counts.bad} l3=${counts.l3} l2=${counts.l2} praise=${counts.praise}`);
 }
 
 (async () => {
+  const allStyles = process.argv.includes('--all-styles');
+  const styleIndex = process.argv.indexOf('--style');
+  const styleId = styleIndex < 0 ? 'yagura' : process.argv[styleIndex + 1];
+  const style = styleId ? findStyle(styleId) : undefined;
+  if (!style || (allStyles && styleIndex >= 0)) {
+    console.error(`Invalid --style: ${styleId ?? '(missing)'}. Choose one of: ${STYLES.map((s) => s.id).join(', ')}; or use --all-styles alone.`);
+    process.exit(1);
+    return;
+  }
+  mkdirSync(dirname(OUT), { recursive: true });
+  writeFileSync(OUT, '');
   let engine: Engine | undefined;
   let failures = 0;
   try {
     const factory = require('@mizarjp/yaneuraou.k-p') as EngineFactory;
     engine = new Engine(factory, 1);
     await engine.init();
-    const random = rng(SEED);
     const start = Number(arg('start', '0'));
-    for (let i = start; i < start + GAMES; i++) {
-      try {
-        await playGame(i, engine, random);
-      } catch (err) {
-        failures++;
-        console.error('game failed', i, err);
-        log({ game: i, type: 'error', message: String(err) });
+    for (const selected of allStyles ? STYLES : [style]) {
+      const random = rng(SEED);
+      for (let i = start; i < start + GAMES; i++) {
+        try {
+          await playGame(i, engine, random, selected);
+        } catch (err) {
+          failures++;
+          console.error('game failed', selected.id, i, err);
+          log({ game: i, style: selected.id, type: 'error', message: String(err) });
+        }
       }
     }
   } catch (err) {
