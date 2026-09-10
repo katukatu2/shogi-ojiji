@@ -2,6 +2,8 @@
 
 作成日: 2026-09-10
 
+**最新の更新:** `baebaeb` までの [追加査読](claude-followup-review.md) で、新規欠陥なし・全領域7を受領。その後の4戦法採取、製品の詰みまでの通し確認、囲い・角交換課題・CIの失敗検出の修正は [coverage-verification.md](coverage-verification.md)。次の依頼は [claude-coverage-review-request.md](claude-coverage-review-request.md)。Androidビルドを試行したがJavaのAccessDeniedで停止し、APKは未生成。以下の旧引き継ぎは履歴資料。
+
 **最新の再査読対応:** `bafb87f` に対する原文は [claude-rereview.md](claude-rereview.md)、今回の修正は [codex-rereview-response.md](codex-rereview-response.md)、次の限定確認依頼は [claude-followup-review-request.md](claude-followup-review-request.md)。現状の検証件数・残条件は [release-audit.md](release-audit.md) を参照。直前の独立評価は指導7・ゲーム7・リリース6・品質保証7。
 
 **Claude査読対応後の更新:** 原査読は [claude-review.md](claude-review.md)、18項目への回答は [codex-review-response.md](codex-review-response.md)、次にClaudeへ渡す文は [claude-rereview-request.md](claude-rereview-request.md)。以下の初期引き継ぎの件数・未実装一覧は履歴資料であり、現状は [release-audit.md](release-audit.md) を優先する。

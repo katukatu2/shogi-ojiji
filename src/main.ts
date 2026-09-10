@@ -10,7 +10,7 @@ import { chooseLocalMove } from './ai/local';
 import { Engine, engineSupported, browserEngineFactory, Analysis } from './ai/engine';
 import { Judge, Verdict, Praise, Judgement, safeMove, bestCaptureGain } from './style/judge';
 import { Style } from './style/types';
-import { choosePlanMove, planApplies, planKey } from './style/plan';
+import { choosePlanMove, planApplies, planComment } from './style/plan';
 import { ojijiSvg, Expression } from './ui/ojiji';
 import { OjijiRig, RigState } from './ui/rig';
 import {
@@ -748,7 +748,7 @@ async function npcMove(): Promise<void> {
 
 // オジジの手のあとの独り言: 駒組みの節目、狙いのほのめかし、王手
 function ojijiMutters(g: Game, m: Move): void {
-  const comment = g.style.planComments?.[planKey(m)];
+  const comment = planComment(g.style, g.pos, m);
   if (comment) {
     showToast('idle', 'オジジ', comment, 4500, 'mutter');
     return;

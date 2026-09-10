@@ -227,7 +227,7 @@ export const COMMON_GOOD: GoodPattern[] = [
   },
 ];
 
-// 角交換（序盤に、相手の角を角で取る）。戦法ごとに台詞を変える
+// 角交換（角で交換を仕掛ける、または取られた自分の角を相手の角と交換する）。
 export function bishopExchange(id: string, comment: string): GoodPattern {
   return {
     id,
@@ -236,6 +236,11 @@ export function bishopExchange(id: string, comment: string): GoodPattern {
       const victim = before.get(move.to.x, move.to.y);
       if (!victim || victim.color !== 1 || (victim.type !== 'KA' && victim.type !== 'UM')) return null;
       if (before.hands[0].KA > 0 || after.hands[0].KA === 0) return null;
+      const ownBishopRemains = before.board.some((p) => p?.color === 0 && (p.type === 'KA' || p.type === 'UM'));
+      const takingBack = !ownBishopRemains && before.hands[1].KA > 0;
+      const offeringTrade = (move.piece === 'KA' || move.piece === 'UM') &&
+        after.legalMoves().some((reply) => reply.to.x === move.to.x && reply.to.y === move.to.y);
+      if (!takingBack && !offeringTrade) return null;
       return comment;
     },
   };

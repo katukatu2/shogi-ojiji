@@ -29,10 +29,10 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      # android/variables.gradle の compileSdkVersion 36 に合わせる。足りないものは AGP がライセンス承諾済みなら自動で取る
+      # compileSdkVersion 36 と、AGP 8.13 が実際に要求する Build-Tools 35 を明示する。
       - uses: android-actions/setup-android@v3
         with:
-          packages: platforms;android-36 build-tools;36.0.0 platform-tools
+          packages: platforms;android-36 build-tools;35.0.0 build-tools;36.0.0 platform-tools
       - run: npm ci
       - run: npm run build
       # dist/ を android/app/src/main/assets/public へ複製し、プラグインの gradle 設定を更新する

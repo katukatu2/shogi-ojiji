@@ -1,4 +1,5 @@
 import { Style } from './types';
+import { goteYaguraComplete, goteYaguraGuards } from './castles';
 import { COMMON_BAD, COMMON_GOOD, YAGURA_GOOD } from './patterns';
 import { COMMON_REACTIONS } from './common';
 
@@ -96,8 +97,8 @@ export const YAGURA: Style = {
     'FU:9c9d': '端歩は受けておく。位を取られると窮屈じゃ。',
     'FU:4c4d': '角道は止めさせてもらう。角交換はせん。',
     'GI:4b3c': '３三銀。矢倉の屋根じゃ。',
-    'KI:5b4c': '金銀三枚、これで土台は固まった。',
-    'OU:3a2b': '矢倉囲い、完成じゃ。さて、どう崩す？',
+    'KI:5b4c': (pos) => goteYaguraGuards(pos) ? '金銀三枚、これで土台は固まった。' : '金は４三。金銀を連結させて守るのじゃ。',
+    'OU:3a2b': (pos) => goteYaguraComplete(pos) ? '矢倉囲い、完成じゃ。さて、どう崩す？' : '玉は２二。周りの金銀も確かめ、囲いを固めるぞ。',
     'FU:8d8e': '飛車先を伸ばすぞ。７七は守れておるか？',
     'KA:3a6d': '角を６四へ。ここからお前の陣を睨む。',
     'FU:6c6d': '６四歩。こちらも攻めの形を作らせてもらう。',

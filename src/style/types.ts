@@ -27,8 +27,8 @@ export interface Style {
   planTolerance?: number;
   // 駒組みより優先する、よくある仕掛けへの受け（全 plan 共通）
   reactions?: Reaction[];
-  // 駒組みの節目でオジジがつぶやく一言（plan の「駒種:USI」→ 台詞）
-  planComments?: Record<string, string>;
+  // 駒組みの節目の一言。盤面を述べる場合は指した後の局面から選ぶ。
+  planComments?: Record<string, string | ((pos: Position) => string)>;
   // この戦法相手にやってはいけない形（共通のものに加えて）
   badPatterns: BadPattern[];
   // この戦法相手の良い手の形（頷く）

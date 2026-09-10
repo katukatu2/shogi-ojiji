@@ -1,6 +1,7 @@
 import { Style } from './types';
 import { COMMON_BAD, COMMON_GOOD, FUNAGAKOI, ANAGUMA, KYUSEN, MIGI_SHIKEN, bishopExchange, edgeAttack } from './patterns';
 import { COMMON_REACTIONS } from './common';
+import { goteMinoComplete } from './castles';
 
 // オジジの後手四間飛車。飛車を４二へ振り、玉は８二の美濃囲い。
 export const SHIKENBISHA: Style = {
@@ -79,10 +80,10 @@ export const SHIKENBISHA: Style = {
   planComments: {
     'FU:4c4d': '角道は止める。振り飛車は角交換を好まん。',
     'HI:8b4b': '飛車は４筋へ。四間飛車じゃ。',
-    'OU:7b8b': '玉は８二。美濃囲いが見えてきたな。',
-    'GI:7a7b': '美濃囲い、完成じゃ。横からの攻めには強いぞ。',
-    'GI:3b4c': '４三銀。飛車の横に銀を添える。',
-    'OU:8b9a': '穴熊じゃ。ここまで潜れば王手はかからん。',
+    'OU:7b8b': (pos) => goteMinoComplete(pos) ? '美濃囲い、完成じゃ。横からの攻めには強いぞ。' : '玉は８二。周りの金銀も連結させるぞ。',
+    'GI:7a7b': (pos) => goteMinoComplete(pos) ? '美濃囲い、完成じゃ。横からの攻めには強いぞ。' : '銀は７二。美濃囲いを目指して守りを固めるぞ。',
+    'GI:3b4c': '４三銀。銀も前へ出して、飛車と協力させるぞ。',
+    'OU:8b9a': '玉を９一に潜らせた。穴熊を目指して、周りの守りを固めるぞ。',
     'KE:8a7c': '桂を跳ねた。こちらから仕掛けるぞ。',
   },
   badPatterns: COMMON_BAD,

@@ -11,7 +11,7 @@ import { PIECE_NAME } from '../src/engine/types';
 import { Engine, EngineFactory, Analysis } from '../src/ai/engine';
 import { chooseMove } from '../src/ai/search';
 import { Judge, bestCaptureGain, safeMove } from '../src/style/judge';
-import { choosePlanMove, planApplies, planKey, PlanState } from '../src/style/plan';
+import { choosePlanMove, planApplies, planComment, PlanState } from '../src/style/plan';
 import { STYLES, findStyle } from '../src/style/index';
 
 const require = createRequire(import.meta.url);
@@ -147,7 +147,7 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
     const obase = { game: id, opening: opening.name, variant: variant.name, ply: pos.moves.length + 1, before: pos.moves.map(moveToUsi).join(' '), move: moveToKanji(om, 1, null, pos), usi: moveToUsi(om) };
     pos.apply(om);
     if (pos.isGameOver()) { result = 'lose'; break; }
-    const comment = STYLE.planComments?.[planKey(om)];
+    const comment = planComment(STYLE, pos, om);
     if (comment) log({ ...obase, type: 'mutter', why: comment });
     else if (pos.inCheck(0)) {
       if (pos.moves.length - lastCheck >= 6) {
@@ -168,19 +168,29 @@ async function playGame(id: number, engine: Engine, random: () => number): Promi
 }
 
 (async () => {
-  const factory = require('@mizarjp/yaneuraou.k-p') as EngineFactory;
-  const engine = new Engine(factory, 1);
-  await engine.init();
-  const random = rng(SEED);
-  const start = Number(arg('start', '0'));
-  for (let i = start; i < start + GAMES; i++) {
-    try {
-      await playGame(i, engine, random);
-    } catch (err) {
-      console.error('game failed', i, err);
-      log({ game: i, type: 'error', message: String(err) });
+  let engine: Engine | undefined;
+  let failures = 0;
+  try {
+    const factory = require('@mizarjp/yaneuraou.k-p') as EngineFactory;
+    engine = new Engine(factory, 1);
+    await engine.init();
+    const random = rng(SEED);
+    const start = Number(arg('start', '0'));
+    for (let i = start; i < start + GAMES; i++) {
+      try {
+        await playGame(i, engine, random);
+      } catch (err) {
+        failures++;
+        console.error('game failed', i, err);
+        log({ game: i, type: 'error', message: String(err) });
+      }
     }
+  } catch (err) {
+    failures++;
+    console.error('selfplay failed', err);
+    log({ type: 'error', message: String(err) });
+  } finally {
+    engine?.terminate();
   }
-  engine.terminate();
-  process.exit(0);
+  process.exit(failures > 0 ? 1 : 0);
 })();

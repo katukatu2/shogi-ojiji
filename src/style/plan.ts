@@ -5,11 +5,17 @@ import { Move } from '../engine/types';
 import { moveToUsi } from '../engine/notation';
 import { Analysis, Evaluator } from '../ai/engine';
 import { bestCaptureGain } from './judge';
-import { Reaction } from './types';
+import { Reaction, Style } from './types';
 
 // plan の手と盤上の手を対応づけるキー（「駒種:USI」）
 export function planKey(m: Move): string {
   return `${m.piece}:${moveToUsi(m)}`;
+}
+
+// 独り言は指した後の局面から選ぶ。予定の手順どおりに組めたとは限らない。
+export function planComment(style: Style, pos: Position, move: Move): string | undefined {
+  const comment = style.planComments?.[planKey(move)];
+  return typeof comment === 'function' ? comment(pos) : comment;
 }
 
 export const PLAN_MAX_MOVES = 50; // これ以降はエンジンに任せる

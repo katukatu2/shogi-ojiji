@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
@@ -38,10 +39,17 @@ jobs:
           path: logs/pwa/report
           retention-days: 7
       # 台詞の点検: 各戦法 2 局ずつ自動対局してエラーが出ないことだけ確かめる
-      - run: |
+      - id: selfplay
+        run: |
           for s in yagura shikenbisha kakugawari bougin nakabisha; do
             npx vite-node scripts/selfplay.ts -- --style $s --games 2 --plies 60 --out logs/ci-$s.jsonl
           done
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.selfplay.outcome != 'skipped' }}
+        with:
+          name: selfplay-logs
+          path: logs/ci-*.jsonl
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: dist

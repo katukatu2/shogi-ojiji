@@ -1,4 +1,5 @@
 import { Style } from './types';
+import { goteMinoComplete } from './castles';
 import { COMMON_BAD, COMMON_GOOD, GoodPattern, FUNAGAKOI, ANAGUMA, pieceAt } from './patterns';
 import { COMMON_REACTIONS, REACT_EDGE_1, REACT_EDGE_9, REACT_ROOK_FILE } from './common';
 
@@ -93,7 +94,7 @@ export const NAKABISHA: Style = {
   planComments: {
     'HI:8b5b': '飛車は５筋。ゴキゲン中飛車じゃ。',
     'FU:5d5e': '５五歩。５筋を伸ばして中央を制する。',
-    'GI:7a7b': '美濃囲い、完成じゃ。',
+    'GI:7a7b': (pos) => goteMinoComplete(pos) ? '美濃囲い、完成じゃ。' : '銀は７二。美濃囲いを目指して守りを固めるぞ。',
     'GI:4b5c': '５三銀。５筋の突破を狙う。',
     'KA:2b3c': '３三角。角道は開けたままじゃ。角交換、来るなら来い。',
   },
