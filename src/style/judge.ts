@@ -1,5 +1,5 @@
 import { Position } from '../engine/position';
-import { Move, PIECE_VALUE, PieceType, PIECE_KANJI, PIECE_NAME, Color } from '../engine/types';
+import { Move, PIECE_VALUE, PieceType, PIECE_KANJI, PIECE_NAME, Color, Sq } from '../engine/types';
 import { moveToUsi, usiToMove, moveToKanji, sqToKanji } from '../engine/notation';
 import { findMateInOne } from '../ai/search';
 import { Analysis, Evaluator } from '../ai/engine';
@@ -37,13 +37,22 @@ export interface Praise {
   comment: string;
 }
 
+// 判定機の記憶（待ったで戻すときに控える）
+export interface JudgeState {
+  fired: string[];
+  ignored: string[];
+  lastSurprise: number;
+}
+
 export interface Judgement {
   verdict: Verdict | null;
   praise: Praise | null;
   // 振り返り用: 指す前と指した後の評価（先手視点）。エンジンが無いときは null。
+  // before は「正解を指した後」を読み直したらその値に揃える（振り返りの二つの数字と反応の強さを食い違わせない）。
   // gap は指す前の局面での最善手と次善手の評価の差（正の値。次善が読めなければ null）。「決め手」の判定に使う。
-  // depth は指す前の読みの深さ（数字の確からしさの目安。記録に残す）
-  analysis?: { before: number; after: number; better: Move | null; gap: number | null; depth: number };
+  // depth は指す前の読みの深さ（数字の確からしさの目安。記録に残す）。
+  // playedBest は指した手がエンジンの最善手だったか（対局中に叱らないのと同じ手を、振り返りでも間違い扱いにしないため）
+  analysis?: { before: number; after: number; better: Move | null; gap: number | null; depth: number; playedBest: boolean };
 }
 
 // 駒がタダで取られると判断する損失のしきい値（香車以上）。エンジンが無いときの簡易判定用
@@ -62,7 +71,9 @@ export const SURPRISE_INTERVAL = 6; // 「ほう」は何手か空けて言う
 export const EVAL_HOPELESS = -1000; // 指す前にこれより悪ければ（後手優勢以上）、何を指しても言わない
 export const MATE_MISSED_MAX = 3; // この手数以内の詰みを見逃したときだけ「詰みを見逃すな」（長い詰みは初心者に見えない）
 export const MATE_ALLOWED_MAX = 5; // この手数以内で詰まされる手だけ「詰まされるぞ」。長い詰みは形勢の落ち幅で判断
-export const SHALLOW_DEPTH = 8; // 指す前の読みがこれより浅ければ、形勢の数字に「目安」と添える（浅い読みの数字を確かなものと思わせない）
+// 指す前の読みがこれより浅ければ、形勢の数字に「目安」と添える（浅い読みの数字を確かなものと思わせない）。
+// 実測（400ms・MultiPV 2）の深さは 10〜13 なので、8 では「目安」が一度も出なかった
+export const SHALLOW_DEPTH = 14;
 const EVAL_CLAMP = 3000;
 
 // 落ち幅と、落ちた結果の形勢から段階を決める（1 は反応なし）
@@ -70,7 +81,8 @@ export function severity(before: Analysis, after: Analysis): 1 | Level {
   const b = clampCp(before);
   const a = clampCp(after);
   const drop = b - a;
-  if (a >= STILL_GOOD) return drop >= LEVEL2_DROP ? 2 : 1; // 勝っているうちは責めない
+  // 勝っているうちは責めない。ただし大きく落とした手を「良い手じゃな」とは呼ばない（段階 3 止まり。カットインは出ない）
+  if (a >= STILL_GOOD) return drop >= EVAL_DROP ? 3 : drop >= LEVEL2_DROP ? 2 : 1;
   if (drop >= LEVEL5_DROP) return 5;
   if (drop >= LEVEL4_DROP || (drop >= EVAL_DROP && b >= TURNED_BAD && a < TURNED_BAD)) return 4;
   if (drop >= EVAL_DROP) return 3;
@@ -143,6 +155,31 @@ function savesFromCapture(pos: Position, better: Move): boolean {
   }
 }
 
+// 取られそうだった駒が、指す前の局面のどこにいたか。
+// 相手の応手の取り先が指した手の行き先と同じなら「今動かした駒」なので、その出発点（打った駒なら盤にいない）
+function victimSquare(move: Move, threatTo: Sq): Sq | null {
+  return move.to.x === threatTo.x && move.to.y === threatTo.y ? move.from : threatTo;
+}
+
+// 正解 better を指したあと、その駒（sq にいる先手の駒）を取る合法手が後手に残るか。
+// タダで取られはしなくても取り自体は残る、というときに「タダでは取られん」と言うために使う
+function stillCapturable(pos: Position, better: Move, sq: Sq | null): boolean {
+  if (!sq) return false;
+  pos.apply(better);
+  try {
+    const at = better.from && better.from.x === sq.x && better.from.y === sq.y ? better.to : sq; // 正解がその駒を動かしたなら移った先を見る
+    const piece = pos.get(at.x, at.y);
+    if (!piece || piece.color !== 0) return false;
+    const saved = pos.turn;
+    pos.turn = 1;
+    const can = pos.legalMoves().some((m) => m.to.x === at.x && m.to.y === at.y);
+    pos.turn = saved;
+    return can;
+  } finally {
+    pos.undo();
+  }
+}
+
 export class Judge {
   private ignored = new Set<string>();
   private fired = new Set<string>(); // 一局に一度だけ反応するパターン
@@ -176,6 +213,17 @@ export class Judge {
   // この一局で反応した形の id（課題の達成判定に使う）
   firedIds(): ReadonlySet<string> {
     return this.fired;
+  }
+
+  // 「一局に一度だけ」の記録を控える／戻す（待ったで局面を戻したときに、判定の記憶も戻すため）
+  snapshot(): JudgeState {
+    return { fired: [...this.fired], ignored: [...this.ignored], lastSurprise: this.lastSurprise };
+  }
+
+  restore(state: JudgeState): void {
+    this.fired = new Set(state.fired);
+    this.ignored = new Set(state.ignored);
+    this.lastSurprise = state.lastSurprise;
   }
 
   // 相手が考えている間に、次の局面を先読みしておく
@@ -219,14 +267,17 @@ export class Judge {
     }
   }
 
-  // 最善手の狙いを言う。相手の狙い（手番を渡したときの最善）があり、最善手を指すとその狙いが消えるなら「○○を防ぐ手」。
-  // afterBest は最善手を指した後の読み（相手の応手 pv[0] が狙いと違えば、狙いは消えたとみなす）
-  private async purposeOf(pos: Position, best: Move, before: Analysis, afterBest: Analysis | null): Promise<string> {
+  // 最善手の狙いを言う。相手の狙い（手番を渡したときの最善）があり、最善手を指すとその狙いの手が指せなくなるなら「○○を防ぐ手」。
+  // 「防ぐ」と言えるのは狙いの手が非合法になるときだけ。相手の応手が変わっただけでは、その手を防いだ根拠にならない
+  private async purposeOf(pos: Position, best: Move, before: Analysis): Promise<string> {
     if (moveNature(pos, best) !== 'attack') {
       const threat = await this.threatOf(pos);
       if (threat && clampCp(threat.analysis) <= clampCp(before) - THREAT_DROP) {
-        const reply = afterBest?.pv[0] ?? null;
-        if (reply !== moveToUsi(threat.move)) {
+        const usi = moveToUsi(threat.move);
+        pos.apply(best);
+        const stillLegal = safeMove(pos, usi) !== null;
+        pos.undo();
+        if (!stillLegal) {
           return `ここは${moveToKanji(best, 0, null, pos)}と${moveToKanji(threat.move, 1, null, pos)}を防ぐ手じゃ。`;
         }
       }
@@ -312,9 +363,11 @@ export class Judge {
 
     if (soft && clampCp(before) > EVAL_HOPELESS && before.bestmove !== moveToUsi(move)) {
       const drop = clampCp(before) - clampCp(after);
-      if (drop >= soft.p.minDrop!) {
+      const better = before.bestmove ? safeMove(pos, before.bestmove) : null;
+      // 講釈（「玉の前の歩は最後の盾じゃ」など）は、正解が受けの手のときだけ。
+      // 落ち幅の理由が形と無関係（正解が攻めの手）なら、普通の説明に落とす
+      if (drop >= soft.p.minDrop! && better && moveNature(pos, better) === 'defend') {
         this.fired.add(soft.p.id);
-        const better = before.bestmove && before.bestmove !== moveToUsi(move) ? safeMove(pos, before.bestmove) : null;
         return {
           ...none,
           verdict: {
@@ -336,6 +389,7 @@ export class Judge {
       better: before.bestmove && before.bestmove !== moveToUsi(move) ? safeMove(pos, before.bestmove) : null,
       gap: second && second.mate === null && before.mate === null ? Math.max(0, clampCp(before) - clampCp(second)) : null,
       depth: before.depth,
+      playedBest: before.bestmove === moveToUsi(move),
     };
     let verdict = this.engineVerdict(pos, move, before, after);
     let afterBest: Analysis | null = null;
@@ -350,11 +404,17 @@ export class Judge {
       } finally {
         pos.undo();
       }
-      if (afterBest) verdict = this.engineVerdict(pos, move, { ...before, cp: afterBest.cp, mate: afterBest.mate }, after);
+      if (afterBest) {
+        verdict = this.engineVerdict(pos, move, { ...before, cp: afterBest.cp, mate: afterBest.mate }, after, afterBest.cp);
+        // 振り返りの数字も読み直した値に揃える（正解の実力はこの値）
+        analysis.before = afterBest.cp;
+        // 読み直して叱るのをやめた（正解の方が悪かった）手は、振り返りでも勧めない
+        if (!verdict) analysis.better = null;
+      }
     }
     if (verdict && verdict.usedPurpose && verdict.better) {
       // 最善手の狙いを、相手の狙いを読んでから言う
-      verdict.why = verdict.why.replace(PURPOSE_MARK, await this.purposeOf(pos, verdict.better, before, afterBest));
+      verdict.why = verdict.why.replace(PURPOSE_MARK, await this.purposeOf(pos, verdict.better, before));
     } else if (verdict && verdict.why.includes(PURPOSE_MARK)) {
       verdict.why = verdict.why.replace(PURPOSE_MARK, describeBestPurpose(pos, verdict.better));
     }
@@ -390,8 +450,9 @@ export class Judge {
 ${playedLine}`;
   }
 
-  // エンジンの評価値の落ち方で叱るかどうかを決める
-  private engineVerdict(pos: Position, move: Move, before: Analysis, after: Analysis): Verdict | null {
+  // エンジンの評価値の落ち方で叱るかどうかを決める。
+  // afterBestCp は「正解を指した後」の評価（読み直したときだけ渡る）。攻めが速いと言い切ってよいかの判断に使う
+  private engineVerdict(pos: Position, move: Move, before: Analysis, after: Analysis, afterBestCp: number | null = null): Verdict | null {
     // エンジンの最善手（ヒントで示す手）を指したなら、あとで深く読んで評価が下がっても責めない
     if (before.bestmove === moveToUsi(move)) return null;
     // すでに負けている局面では、何を指しても評価が下がるので言わない
@@ -411,11 +472,12 @@ ${playedLine}`;
       };
     }
 
-    // 相手の最善の応手と、その性質（取る・王手・成る）を調べる
+    // 相手の最善の応手と、その性質（取る・王手・成る）、その手で取られる駒を調べる
     const wasInCheck = pos.inCheck(0);
     pos.apply(move);
     const threat = after.pv[0] ? safeMove(pos, after.pv[0]) : null;
     const threatKind = threat ? classify(pos, threat, 0) : 'other';
+    const threatVictim = threat ? pos.get(threat.to.x, threat.to.y) : null;
     pos.undo();
     const threatText = threat ? moveToKanji(threat, 1, move) : '';
     const betterText = better ? `ここは${moveToKanji(better, 0, null, pos)}じゃ。` : '';
@@ -438,33 +500,40 @@ ${playedLine}`;
     if (level === 1) return null;
 
     // 指すべきだった手（エンジンの最善）が何をする手だったか
-    const missed = better ? describeMissed(pos, better, move) : null;
+    const missed = better ? describeMissed(pos, better, move, afterBestCp) : null;
 
-    // 相手の応手による損（取られる・王手される・成り込まれる）
+    // 相手の応手による損（取られる・取り返される・王手される・成り込まれる）
     let consequence = '';
-    const threatVictim = threat ? (() => { pos.apply(move); const v = pos.get(threat.to.x, threat.to.y); pos.undo(); return v; })() : null;
     // 相手の応手でタダ同然に取られる駒の種類（香車以上）。無ければ null
     const hangs = threatKind === 'capture' && threatVictim && PIECE_VALUE[threatVictim.type] >= HANG_THRESHOLD ? threatVictim.type : null;
-    if (threat?.promote) consequence = `その手は${threatText}と成り込まれる。`;
-    else if (hangs) consequence = `その手は${threatText}と取られる。`;
+    // 逃した手の説明で「○○が取られそうじゃった」と言った駒への取りなら、同じ事件を二度言わない
+    const retold = !!(missed?.rescued && threat && missed.rescued.x === threat.to.x && missed.rescued.y === threat.to.y);
+    const taken = pos.get(move.to.x, move.to.y); // 指した手が取った駒
+    const gained = taken && taken.color === 1 ? PIECE_VALUE[taken.type] : 0;
+    if (hangs && !retold) {
+      consequence = gained >= PIECE_VALUE[hangs]
+        // 同等以上の駒を取った後に取り返されるのは「駒損」ではなく「交換」
+        ? `その手は${threatText}と取り返されて${tradeName(taken!.type, hangs)}になる。`
+        : `その手は${threatText}と${PIECE_NAME[hangs]}を取られる。`;
+    } else if (threat?.promote && !retold) consequence = `その手は${threatText}と成り込まれる。`;
     else if (threatKind === 'check') consequence = `その手は${threatText}と王手されて苦しい。`;
 
     const degree = level === 5 ? '決定的に' : 'はっきり';
     let why: string;
     if (level === 2) {
-      why = better ? `ワシなら${moveToKanji(better, 0, null, pos)}じゃ。${missed ?? ''}` : '悪くはない。';
+      why = better ? `ワシなら${moveToKanji(better, 0, null, pos)}じゃ。${missed?.text ?? ''}` : '悪くはない。';
     } else if (wasInCheck) {
       why = `王手の受け方が悪い。${consequence}${betterText}`;
     } else if (missed) {
       // 「相手の次の手」より「指すべき手を逃した」ことを先に言う
-      const tail = better && missed.includes(moveToKanji(better, 0, null, pos)) ? '' : betterText;
-      why = `${missed}${consequence ? `しかも${consequence}` : ''}${tail}`;
+      const tail = better && missed.text.includes(moveToKanji(better, 0, null, pos)) ? '' : betterText;
+      why = `${missed.text}${consequence ? `しかも${consequence}` : ''}${tail}`;
     } else if (consequence) {
       // 取られる手なら、正解を指せばその駒が助かるかも言う（正解でも取られるままなら今まで通り「ここは▲○○じゃ」）
-      const rescue = hangs && better && savesFromCapture(pos, better) ? `${moveToKanji(better, 0, null, pos)}なら${PIECE_NAME[hangs]}は取られん。` : betterText;
-      why = `${consequence}形勢が${degree}悪くなる。${rescue}`;
+      const rescue = hangs && better && threat ? rescueText(pos, better, move, threat.to, hangs) : '';
+      why = `${consequence}形勢が${degree}悪くなる。${rescue || betterText}`;
     } else {
-      why = `${PURPOSE_MARK}形勢を${degree}損ねる手じゃ。`;
+      why = `その手は形勢を${degree}損ねる。${PURPOSE_MARK}`;
     }
     return {
       kind: 'eval',
@@ -563,33 +632,48 @@ export function moveNature(pos: Position, m: Move): 'attack' | 'defend' | 'other
   return 'other';
 }
 
-// 指すべきだった手（best）が何をする手だったかを説明する。説明できなければ null
-function describeMissed(pos: Position, best: Move, played: Move): string | null {
+// 「角銀交換」のような駒の交換の呼び名（取った駒・取られる駒の順。同じ種類なら「歩の交換」）
+function tradeName(gainedType: PieceType, lostType: PieceType): string {
+  if (gainedType === lostType) return `${PIECE_NAME[gainedType]}の交換`;
+  return `${PIECE_NAME[gainedType]}${PIECE_NAME[lostType]}交換`;
+}
+
+// 正解を指せば、取られそうだった駒がどうなるかを言う。
+// 取り自体が残るなら「タダでは取られん」（取られないと言い切らない）。正解でも取られるままなら「ここは▲○○じゃ」
+function rescueText(pos: Position, better: Move, played: Move, threatTo: Sq, hangs: PieceType): string {
+  const bestText = moveToKanji(better, 0, null, pos);
+  if (!savesFromCapture(pos, better)) return `ここは${bestText}じゃ。`;
+  const safe = stillCapturable(pos, better, victimSquare(played, threatTo)) ? 'タダでは取られん' : '取られん';
+  return `${bestText}なら${PIECE_NAME[hangs]}は${safe}。`;
+}
+
+// 指すべきだった手（best）が何をする手だったかの説明。説明できなければ null。
+// rescued は「○○が取られそうじゃった」と言った駒の位置（相手の応手の説明で同じ事件を繰り返さないために返す）
+interface Missed {
+  text: string;
+  rescued: Sq | null;
+}
+
+// afterBestCp は正解を指した後の評価（分からなければ null）
+function describeMissed(pos: Position, best: Move, played: Move, afterBestCp: number | null): Missed | null {
   const bestText = moveToKanji(best, 0, null, pos);
+  const plain = (text: string): Missed => ({ text, rescued: null });
   // 同じ手で成らなかった
   if (best.from && played.from && best.from.x === played.from.x && best.from.y === played.from.y
     && best.to.x === played.to.x && best.to.y === played.to.y && best.promote && !played.promote) {
-    return `成らない手はない。${bestText}と成るべきじゃ。`;
+    return plain(`成らない手はない。${bestText}と成るべきじゃ。`);
   }
   // まず「取れた駒」「厳しい王手」のような具体的な見逃し（歩は取れても大した話ではないので言わない）
   const victim = pos.get(best.to.x, best.to.y);
   const playedKind = classify(pos, played, 1);
   if (victim && victim.color === 1 && victim.type !== 'FU' && playedKind !== 'capture') {
-    return `${bestText}で${PIECE_NAME[victim.type]}が取れた。`;
+    return plain(`${bestText}で${PIECE_NAME[victim.type]}が取れた。`);
   }
   if (classify(pos, best, 1) === 'check' && playedKind !== 'check') {
-    return `${bestText}の王手が厳しかった。`;
+    return plain(`${bestText}の王手が厳しかった。`);
   }
-  // 攻めるべきところで受けた、受けるべきところで攻めた
-  const bestNature = moveNature(pos, best);
-  const playedNature = moveNature(pos, played);
-  if (bestNature === 'attack' && playedNature === 'defend') {
-    return `受けている場合ではない。${bestText}と攻める方が速い。`;
-  }
-  if (bestNature === 'defend' && playedNature === 'attack') {
-    return `攻めている場合ではない。${bestText}と受けるのが先じゃ。`;
-  }
-  // 取られそうな駒を、最善手なら救えていた
+  // 取られそうな駒を、最善手なら救えていた。
+  // 攻め・受けの分岐より先に見る（飛車を逃がす手を「受け」と呼ぶと、何をすべきだったかが伝わらない）
   const hanging = bestCaptureGain(pos, 1);
   if (hanging.gain >= HANG_THRESHOLD && hanging.target) {
     pos.apply(best);
@@ -600,15 +684,26 @@ function describeMissed(pos: Position, best: Move, played: Move): string | null 
     pos.undo();
     if (afterBest < hanging.gain && afterPlayed >= hanging.gain) {
       const t = hanging.target.to;
-      return `${sqToKanji(t)}の${PIECE_NAME[hanging.victim!]}が取られそうじゃった。${bestText}と手当てすべき。`;
+      return { text: `${sqToKanji(t)}の${PIECE_NAME[hanging.victim!]}が取られそうじゃった。${bestText}と手当てすべき。`, rescued: { ...t } };
     }
+  }
+  // 攻めるべきところで受けた、受けるべきところで攻めた
+  const bestNature = moveNature(pos, best);
+  const playedNature = moveNature(pos, played);
+  if (bestNature === 'attack' && playedNature === 'defend') {
+    // 「攻める方が速い」と言えるのは、正解を指した後も先手が悪くないときだけ
+    const winning = afterBestCp !== null && afterBestCp >= 0;
+    return plain(`受けている場合ではない。${bestText}${winning ? 'と攻める方が速い' : 'の方がまだ良い'}。`);
+  }
+  if (bestNature === 'defend' && playedNature === 'attack') {
+    return plain(`攻めている場合ではない。${bestText}と受けるのが先じゃ。`);
   }
   return null;
 }
 
 // 最善手の狙いを、盤の形から短く言う（「その手は緩い」の代わり）
 function describeBestPurpose(pos: Position, best: Move | null): string {
-  if (!best) return 'その手は緩い。';
+  if (!best) return ''; // 正解が分からないなら狙いも言わない（「形勢を損ねる」の一文だけにする）
   const text = moveToKanji(best, 0, null, pos);
   const nature = moveNature(pos, best);
   const sk = pos.findKing(0);

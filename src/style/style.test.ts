@@ -19,14 +19,15 @@ const flat: Evaluator = {
 };
 
 // 手順ごとに決まった評価を返す偽エンジン。SFEN で読まれたら 'sfen:' + SFEN をキーにする。
-// 値を配列にすると MultiPV（最善・次善）として返す
+// 値を配列にすると MultiPV（最善・次善）として返す。
+// 既定の深さは SHALLOW_DEPTH（14）以上にしておく（深さを指定しないテストで「目安」の添え書きが出ないように）
 function fakeEvaluator(table: Record<string, Partial<Analysis> | Partial<Analysis>[]>): Evaluator {
   const lookupAll = async (moves: string[], opts?: { sfen?: string }): Promise<Analysis[]> => {
     const key = opts?.sfen ? `sfen:${opts.sfen}` : moves.join(' ');
     const a = table[key];
     if (!a) throw new Error(`no fake analysis for "${key}"`);
     const list = Array.isArray(a) ? a : [a];
-    return list.map((x) => ({ cp: 0, mate: null, bestmove: null, pv: [], depth: 10, ...x }));
+    return list.map((x) => ({ cp: 0, mate: null, bestmove: null, pv: [], depth: 16, ...x }));
   };
   return { analyze: async (m, o) => (await lookupAll(m, o))[0], analyzeMulti: lookupAll };
 }
@@ -144,7 +145,7 @@ describe('総合判定', () => {
     play(pos, '7g7f', '3c3d');
     const bad = await judge.judge(pos, usiToMove(pos, '8h5e'));
     expect(bad.verdict?.kind).toBe('eval');
-    expect(bad.verdict?.why).toContain('△同角');
+    expect(bad.verdict?.why).toContain('△同角と角を取られる'); // 取られる駒の名前を入れる
     expect(bad.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +20（互角）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
     const good = await judge.judge(pos, usiToMove(pos, '8h2b+'));
     expect(good.verdict).toBeNull();
@@ -188,10 +189,28 @@ describe('玉頭の歩・端攻めの判定', () => {
     const ok = new Judge(fakeEvaluator({ [moves]: { cp: 50 }, [(moves + ' 8g8f').trim()]: { cp: 30 } }));
     const j = await ok.judge(pos, usiToMove(pos, '8g8f'));
     expect(j.verdict).toBeNull();
-    const bad = new Judge(fakeEvaluator({ [moves]: { cp: 50 }, [(moves + ' 8g8f').trim()]: { cp: -200 } }));
+    // 講釈は正解が受けの手のときだけなので、最善手に▲７九金（受け）を置く
+    const bad = new Judge(fakeEvaluator({ [moves]: { cp: 50, bestmove: '7h7i' }, [(moves + ' 8g8f').trim()]: { cp: -200 } }));
     const j2 = await bad.judge(pos, usiToMove(pos, '8g8f'));
     expect(j2.verdict?.kind).toBe('pattern');
     expect(j2.verdict?.headline).toContain('玉頭');
+  });
+
+  it('形が当てはまっても、正解が受けと関係ない手なら講釈しない（普通の説明に落とす）', async () => {
+    // 玉頭の歩の形は同じだが、エンジンの最善は▲３四飛（攻め）。「玉の前の歩は最後の盾じゃ」は的外れになる
+    const pos = castledPosition({ x: 2, y: 4 });
+    pos.set(6, 7, { type: 'HI', color: 0 }); // ３八飛
+    const moves = pos.moves.map(moveToUsi).join(' ');
+    const judge = new Judge(fakeEvaluator({
+      [moves]: { cp: 50, bestmove: '3h3d' },
+      [(moves + ' 3h3d').trim()]: { cp: 50 },
+      [(moves + ' 8g8f').trim()]: { cp: -400 },
+    }));
+    const j = await judge.judge(pos, usiToMove(pos, '8g8f'));
+    expect(moveNature(pos, usiToMove(pos, '3h3d'))).toBe('attack');
+    expect(j.verdict?.kind).toBe('eval');
+    expect(j.verdict?.headline).not.toContain('玉頭');
+    expect(j.verdict?.why).not.toContain('最後の盾');
   });
 
   it('エンジンが無い環境では玉頭の歩の形だけでは叱らない', async () => {
@@ -298,7 +317,7 @@ describe('2026-09-04 のプレイ感想への修正', () => {
     const pos = Position.initial();
     play(pos, '7g7f', '3c3d');
     const j = await judge.judge(pos, usiToMove(pos, '8h5e'));
-    expect(j.verdict?.why).toContain('△同角と取られる');
+    expect(j.verdict?.why).toContain('△同角と角を取られる');
   });
 });
 
@@ -315,7 +334,8 @@ describe('説明文: 相手の次の手より、逃した手を先に言う', ()
     const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
     expect(j.verdict?.kind).toBe('eval');
     expect(j.verdict?.why.startsWith('▲２二角成で角が取れた。')).toBe(true);
-    expect(j.verdict?.why).toContain('しかもその手は△８八角成と成り込まれる');
+    // 取る手は成る手より先に見る（△８八角成は「角を取られる」）
+    expect(j.verdict?.why).toContain('しかもその手は△８八角成と角を取られる');
   });
 
   it('取られそうな駒を放置したら「手当てすべき」と言う', async () => {
@@ -366,9 +386,12 @@ describe('角交換の頷きは序盤だけ', () => {
 describe('5 段階の反応', () => {
   const a = (cp: number): Analysis => ({ cp, mate: null, bestmove: null, pv: [], depth: 10 });
 
-  it('勝勢のままなら、どれだけ落ちても段階 2 止まり', () => {
-    expect(severity(a(2300), a(1704))).toBe(2);
+  it('勝勢のままなら段階 2 止まり。ただし大きく落とせば段階 3', () => {
+    expect(severity(a(2300), a(2100))).toBe(2); // 小さな損は「良い手じゃな。だがワシなら」
     expect(severity(a(2300), a(2250))).toBe(1);
+    // 596 点も落とした手を「良い手じゃな」とは呼ばない（勝っていても段階 3。カットインは出ない）
+    expect(severity(a(2300), a(1704))).toBe(3);
+    expect(severity(a(2300), a(600))).toBe(3); // 落ち幅が大きくても、勝っている間は段階 3 止まり
   });
 
   it('先手よしのまま少し損ねると 2、互角へ落ちる程度は黙る、はっきり損ねると 3', () => {
@@ -384,6 +407,22 @@ describe('5 段階の反応', () => {
   });
 
   it('段階 2 の文は「ワシなら〜じゃ」', async () => {
+    // 落ち幅は 300 点未満にする（それ以上落とすと、勝勢でも段階 3）
+    const judge = new Judge(fakeEvaluator({
+      '7g7f 3c3d': { cp: 2300, bestmove: '2g2f' },
+      '7g7f 3c3d 2g2f': { cp: 2300 },
+      '7g7f 3c3d 1g1f': { cp: 2100, bestmove: '8c8d' },
+    }));
+    const pos = Position.initial();
+    play(pos, '7g7f', '3c3d');
+    const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
+    expect(j.verdict?.level).toBe(2);
+    expect(j.verdict?.headline).toBe('良い手じゃな。だがワシならこう打つな。');
+    expect(j.verdict?.why).toContain('ワシなら▲２六歩じゃ');
+  });
+
+  it('勝勢でも大きく落とした手は「良い手じゃな」ではなく「むう…」', async () => {
+    // 2300 → 1704（596 点落ち）。勝っているのでカットインは出さないが、良い手とも呼ばない
     const judge = new Judge(fakeEvaluator({
       '7g7f 3c3d': { cp: 2300, bestmove: '2g2f' },
       '7g7f 3c3d 2g2f': { cp: 2300 },
@@ -392,9 +431,8 @@ describe('5 段階の反応', () => {
     const pos = Position.initial();
     play(pos, '7g7f', '3c3d');
     const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
-    expect(j.verdict?.level).toBe(2);
-    expect(j.verdict?.headline).toBe('良い手じゃな。だがワシならこう打つな。');
-    expect(j.verdict?.why).toContain('ワシなら▲２六歩じゃ');
+    expect(j.verdict?.level).toBe(3);
+    expect(j.verdict?.headline).toBe('むう…');
   });
 
   it('形だけの NG は段階 4、詰み絡みは段階 5', async () => {
@@ -707,9 +745,33 @@ describe('判定の補助情報', () => {
     expect(j.analysis?.gap).toBe(250);
   });
 
-  it('最善手が相手の狙いを消す手なら「△○○を防ぐ手」と言う', async () => {
-    // ▲７六歩 △８四歩 のあと、▲２六歩 が最善なのに ▲１六歩 と指した、という設定。
-    // 手番を渡すと △８五歩 で大損（偽エンジンの設定）で、▲２六歩 を指すと相手の応手が変わる → 「△８五歩を防ぐ手」
+  it('最善手が相手の狙いの手を指せなくするなら「△○○を防ぐ手」と言う', async () => {
+    // 後手の角が３三から８八をにらんでいる（手番を渡すと△８八角成で大損）。
+    // 正解の▲６六歩は角道をふさぐので△８八角成が非合法になる → 「△８八角成を防ぐ手」
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(4, 8, { type: 'OU', color: 0 }); // ５九玉
+    pos.set(8, 6, { type: 'FU', color: 0 }); // １七歩
+    pos.set(4, 0, { type: 'OU', color: 1 }); // ５一玉
+    pos.set(6, 2, { type: 'KA', color: 1 }); // ３三角
+    pos.hands[0].FU = 1;
+    const flipped = pos.clone();
+    flipped.turn = 1;
+    const ev = fakeEvaluator({
+      '': { cp: 0, bestmove: 'P*6f' },
+      'P*6f': { cp: 0 },
+      '1g1f': { cp: -400, pv: ['5a4b'] }, // 相手の応手は静かな手（「取られる」の説明は出さない）
+      [`sfen:${flipped.toSfen()}`]: { cp: -600, bestmove: '3c8h+' },
+    });
+    const judge = new Judge(ev, { analyzeMs: 10 });
+    const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
+    expect(j.verdict?.level).toBeGreaterThanOrEqual(4);
+    expect(j.verdict?.why).toBe('その手は形勢をはっきり損ねる。ここは▲６六歩と△８八角成を防ぐ手じゃ。');
+  });
+
+  it('正解を指しても相手の狙いの手が指せるなら「防ぐ手」とは言わない', async () => {
+    // ▲７六歩 △８四歩 のあと、正解の▲２六歩を指しても △８五歩 は指せる（応手が変わるだけ）。
+    // 「△８五歩を防ぐ手」は嘘なので、盤の形から狙いを言う
     const pos = Position.initial();
     play(pos, '7g7f', '8c8d');
     const flipped = pos.clone();
@@ -722,8 +784,9 @@ describe('判定の補助情報', () => {
     });
     const judge = new Judge(ev, { analyzeMs: 10 });
     const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
-    expect(j.verdict?.level).toBeGreaterThanOrEqual(4);
-    expect(j.verdict?.why).toContain('▲２六歩と△８五歩を防ぐ手じゃ');
+    // 「その手は…」で始めて「ここは…」で終える（主語が入れ替わらないように）
+    expect(j.verdict?.why).toBe('その手は形勢をはっきり損ねる。ここは▲２六歩と駒を働かせる手じゃ。');
+    expect(j.verdict?.why).not.toContain('防ぐ手');
   });
 });
 
@@ -749,17 +812,23 @@ describe('読みの深さと数字の確からしさ', () => {
     expect(j.analysis?.depth).toBe(7);
   });
 
-  it('読みが 8 手未満なら、正解の行の末尾に「（読み N 手・目安）」と添える', async () => {
+  it('読みが 14 手未満なら、正解の行の末尾に「（読み N 手・目安）」と添える', async () => {
     const pos = Position.initial();
     play(pos, '7g7f', '3c3d');
     const j = await new Judge(fakeEvaluator(tableWithDepth(3))).judge(pos, usiToMove(pos, '8h5e'));
     expect(j.verdict?.kind).toBe('eval');
     expect(j.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +60（互角）（読み 3 手・目安）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
+    // 実測（400ms・MultiPV 2）でよくある深さ 12 でも添える
+    const pos2 = Position.initial();
+    play(pos2, '7g7f', '3c3d');
+    const j2 = await new Judge(fakeEvaluator(tableWithDepth(12))).judge(pos2, usiToMove(pos2, '8h5e'));
+    expect(j2.verdict?.evalLine).toContain('（読み 12 手・目安）');
     expect(j.analysis?.depth).toBe(3);
   });
 
-  it('読みが 8 手以上なら目安とは言わない', async () => {
-    for (const depth of [8, 10]) {
+  // 実測（400ms・MultiPV 2）の深さは 10〜13。しきい値が 8 では「目安」が一度も出なかったので 14 にした
+  it('読みが 14 手以上なら目安とは言わない', async () => {
+    for (const depth of [14, 20]) {
       const pos = Position.initial();
       play(pos, '7g7f', '3c3d');
       const j = await new Judge(fakeEvaluator(tableWithDepth(depth))).judge(pos, usiToMove(pos, '8h5e'));
@@ -785,7 +854,7 @@ describe('正解ならなぜ助かるか', () => {
     const j = await judge.judge(pos, usiToMove(pos, '8h5e'));
     expect(j.verdict?.kind).toBe('eval');
     expect(j.verdict?.level).toBe(4);
-    expect(j.verdict?.why).toBe('その手は△同角と取られる。形勢がはっきり悪くなる。▲６六歩なら角は取られん。');
+    expect(j.verdict?.why).toBe('その手は△同角と角を取られる。形勢がはっきり悪くなる。▲６六歩なら角は取られん。');
     expect(j.verdict?.why).not.toContain('ここは▲６六歩じゃ');
   });
 
@@ -809,7 +878,7 @@ describe('正解ならなぜ助かるか', () => {
     }));
     const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
     expect(j.verdict?.kind).toBe('eval');
-    expect(j.verdict?.why).toBe('その手は△５五歩と取られる。形勢がはっきり悪くなる。ここは▲２三歩成じゃ。');
+    expect(j.verdict?.why).toBe('その手は△５五歩と角を取られる。形勢がはっきり悪くなる。ここは▲２三歩成じゃ。');
     expect(j.verdict?.why).not.toContain('取られん');
   });
 
@@ -831,7 +900,7 @@ describe('正解ならなぜ助かるか', () => {
       '5i4i': { cp: 0 },
       '6i5h': { cp: -500, bestmove: '5a5h', pv: ['5a5h'] },
     })).judge(check, usiToMove(check, '6i5h'));
-    expect(j1.verdict?.why).toBe('王手の受け方が悪い。その手は△同飛と取られる。ここは▲４九玉じゃ。');
+    expect(j1.verdict?.why).toBe('王手の受け方が悪い。その手は△同飛と金を取られる。ここは▲４九玉じゃ。');
 
     // 取られそうな駒を放置した場面: 「手当てすべき」の文のまま
     const hang = Position.initial();
@@ -846,7 +915,184 @@ describe('正解ならなぜ助かるか', () => {
       '7e6f': { cp: 0 },
       '1g1f': { cp: -500, bestmove: '7d7e', pv: ['7d7e'] },
     })).judge(hang, usiToMove(hang, '1g1f'));
-    expect(j2.verdict?.why).toBe('７五の銀が取られそうじゃった。▲６六銀と手当てすべき。しかもその手は△７五歩と取られる。');
+    // 同じ事件（７五の銀が取られる）を二度言わない
+    expect(j2.verdict?.why).toBe('７五の銀が取られそうじゃった。▲６六銀と手当てすべき。');
     expect(j2.verdict?.why).not.toContain('取られん');
+  });
+});
+
+describe('振り返りの数字と判定を合わせる', () => {
+  it('正解を読み直したら、振り返りの「指す前」もその値に揃える', async () => {
+    // 指す前は +20 だが、正解 ▲２六歩 を指した後は +60。振り返りに残すのは「正解の実力」の +60
+    const judge = new Judge(fakeEvaluator({
+      '7g7f 3c3d': { cp: 20, bestmove: '2g2f' },
+      '7g7f 3c3d 2g2f': { cp: 60 },
+      '7g7f 3c3d 8h5e': { cp: -700, bestmove: '2b5e', pv: ['2b5e'] },
+    }));
+    const pos = Position.initial();
+    play(pos, '7g7f', '3c3d');
+    const j = await judge.judge(pos, usiToMove(pos, '8h5e'));
+    expect(j.analysis?.before).toBe(60);
+    expect(j.analysis?.after).toBe(-700);
+    expect(j.analysis?.better && moveToUsi(j.analysis.better)).toBe('2g2f');
+  });
+
+  it('読み直して叱るのをやめた手は、振り返りでも正解を勧めない', async () => {
+    const judge = new Judge(fakeEvaluator({
+      '7g7f 3c3d': { cp: 100, bestmove: '2g2f' },
+      '7g7f 3c3d 2g2f': { cp: -400 }, // 深く読むと正解の方が悪かった
+      '7g7f 3c3d 1g1f': { cp: -350, bestmove: '8c8d', pv: ['8c8d'] },
+    }));
+    const pos = Position.initial();
+    play(pos, '7g7f', '3c3d');
+    const j = await judge.judge(pos, usiToMove(pos, '1g1f'));
+    expect(j.verdict).toBeNull();
+    expect(j.analysis?.before).toBe(-400);
+    expect(j.analysis?.better).toBeNull(); // エンジン自身が「悪い」と言った手を振り返りで勧めない
+  });
+
+  it('指した手が最善手だったかを analysis.playedBest に残す', async () => {
+    const table = {
+      '7g7f 3c3d': { cp: 50, bestmove: '2g2f' },
+      '7g7f 3c3d 2g2f': { cp: 40 },
+      '7g7f 3c3d 1g1f': { cp: 30, bestmove: '8c8d' },
+    };
+    const pos = Position.initial();
+    play(pos, '7g7f', '3c3d');
+    const best = await new Judge(fakeEvaluator(table)).judge(pos, usiToMove(pos, '2g2f'));
+    expect(best.analysis?.playedBest).toBe(true);
+    const other = await new Judge(fakeEvaluator(table)).judge(pos, usiToMove(pos, '1g1f'));
+    expect(other.analysis?.playedBest).toBe(false);
+  });
+});
+
+describe('取られる・取り返される・取られん の言い分け', () => {
+  it('同等以上の駒を取った後の取り返しは「駒損」ではなく「交換」と言う', async () => {
+    // ▲５五銀と角を取り、△同歩と取り返される形。角銀交換であって「銀を取られる」ではない
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(4, 8, { type: 'OU', color: 0 }); // ５九玉
+    pos.set(3, 5, { type: 'GI', color: 0 }); // ６六銀
+    pos.set(8, 6, { type: 'FU', color: 0 }); // １七歩
+    pos.set(4, 0, { type: 'OU', color: 1 }); // ５一玉
+    pos.set(4, 4, { type: 'KA', color: 1 }); // ５五角
+    pos.set(4, 3, { type: 'FU', color: 1 }); // ５四歩
+    const judge = new Judge(fakeEvaluator({
+      '': { cp: 300, bestmove: '1g1f' },
+      '1g1f': { cp: 300 },
+      '6f5e': { cp: -100, bestmove: '5d5e', pv: ['5d5e'] },
+    }));
+    const j = await judge.judge(pos, usiToMove(pos, '6f5e'));
+    expect(j.verdict?.why.startsWith('その手は△同歩と取り返されて角銀交換になる。')).toBe(true);
+    expect(j.verdict?.why).not.toContain('銀を取られる');
+  });
+
+  it('正解を指しても取り自体が残るなら「タダでは取られん」と言う', async () => {
+    // ８八角は７九銀が守っている。▲７八銀と離れると△８八角成でタダ。
+    // 正解の▲１六歩なら守りは残るが、△８八角成という手自体は指せる
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(4, 8, { type: 'OU', color: 0 }); // ５九玉
+    pos.set(1, 7, { type: 'KA', color: 0 }); // ８八角
+    pos.set(2, 8, { type: 'GI', color: 0 }); // ７九銀（８八を守っている）
+    pos.set(8, 6, { type: 'FU', color: 0 }); // １七歩
+    pos.set(4, 0, { type: 'OU', color: 1 }); // ５一玉
+    pos.set(6, 2, { type: 'KA', color: 1 }); // ３三角
+    const judge = new Judge(fakeEvaluator({
+      '': { cp: 100, bestmove: '1g1f' },
+      '1g1f': { cp: 100 },
+      '7i7h': { cp: -400, bestmove: '3c8h+', pv: ['3c8h+'] },
+    }));
+    const j = await judge.judge(pos, usiToMove(pos, '7i7h'));
+    expect(j.verdict?.why).toBe('その手は△８八角成と角を取られる。形勢がはっきり悪くなる。▲１六歩なら角はタダでは取られん。');
+  });
+});
+
+describe('形だけのラベルを付けない', () => {
+  it('取られそうな駒を逃がす手は「受け」ではなく「手当て」と言う', async () => {
+    // ８八飛が△３三角ににらまれているのに、▲２四歩と銀を取りに行った。
+    // 正解の▲７八飛は形だけ見れば「受け」だが、言うべきは飛車が取られそうだったこと
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(4, 8, { type: 'OU', color: 0 }); // ５九玉
+    pos.set(1, 7, { type: 'HI', color: 0 }); // ８八飛
+    pos.set(7, 4, { type: 'FU', color: 0 }); // ２五歩
+    pos.set(4, 0, { type: 'OU', color: 1 }); // ５一玉
+    pos.set(6, 2, { type: 'KA', color: 1 }); // ３三角（８八の飛車をにらんでいる）
+    pos.set(7, 3, { type: 'GI', color: 1 }); // ２四銀（▲同歩と取れる）
+    expect(moveNature(pos, usiToMove(pos, '8h7h'))).toBe('defend');
+    expect(moveNature(pos, usiToMove(pos, '2e2d'))).toBe('attack');
+    const judge = new Judge(fakeEvaluator({
+      '': { cp: 200, bestmove: '8h7h' },
+      '8h7h': { cp: 200 },
+      '2e2d': { cp: -300, bestmove: '3c8h+', pv: ['3c8h+'] },
+    }));
+    const j = await judge.judge(pos, usiToMove(pos, '2e2d'));
+    expect(j.verdict?.why).toBe('８八の飛が取られそうじゃった。▲７八飛と手当てすべき。');
+    expect(j.verdict?.why).not.toContain('受けるのが先');
+  });
+
+  it('「攻める方が速い」と言えるのは、正解を指した後も先手が悪くないときだけ', async () => {
+    // 「攻めるべきか受けるべきか」と同じ局面。正解を指しても後手よしなら「攻める方が速い」とは言わない
+    const pos = Position.initial();
+    pos.board.fill(null);
+    pos.set(2, 8, { type: 'OU', color: 0 }); // ７九玉
+    pos.set(2, 7, { type: 'KI', color: 0 }); // ７八金
+    pos.set(3, 7, { type: 'KA', color: 0 }); // ６八角
+    pos.set(1, 5, { type: 'FU', color: 0 }); // ８六歩
+    pos.set(7, 5, { type: 'HI', color: 0 }); // ２六飛
+    pos.set(7, 1, { type: 'OU', color: 1 }); // ２二玉
+    pos.set(6, 1, { type: 'KI', color: 1 }); // ３二金
+    pos.set(7, 2, { type: 'FU', color: 1 }); // ２三歩
+    pos.set(3, 1, { type: 'HI', color: 1 }); // ６二飛
+    pos.set(3, 3, { type: 'KA', color: 1 }); // ６四角
+    pos.hands[0].KE = 1;
+    pos.hands[0].KI = 1;
+    const judge = new Judge(fakeEvaluator({
+      '': { cp: -200, bestmove: 'N*3e' },
+      'N*3e': { cp: -200 }, // 正解を指しても後手よし
+      'G*8h': { cp: -800, bestmove: '6d3g+', pv: ['6d3g+'] },
+    }));
+    const j = await judge.judge(pos, usiToMove(pos, 'G*8h'));
+    expect(j.verdict?.why.startsWith('受けている場合ではない。▲３五桂の方がまだ良い。')).toBe(true);
+    expect(j.verdict?.why).not.toContain('攻める方が速い');
+  });
+});
+
+describe('待ったで判定の記憶も戻す', () => {
+  it('snapshot / restore で「一局に一度だけ」の形をもう一度叱れる', async () => {
+    const judge = new Judge(null);
+    const pos = Position.initial();
+    play(pos, '7g7f', '8c8d');
+    const snap = judge.snapshot();
+    const first = await judge.judge(pos, usiToMove(pos, '5i4h'));
+    expect(first.verdict?.kind).toBe('pattern');
+    expect(judge.firedIds().has('king-near-rook')).toBe(true);
+    judge.restore(snap);
+    expect(judge.firedIds().has('king-near-rook')).toBe(false);
+    const again = await judge.judge(pos, usiToMove(pos, '5i4h'));
+    expect(again.verdict?.kind).toBe('pattern');
+  });
+
+  it('「このまま進む」の記憶と「ほう」の間隔も戻る', async () => {
+    const judge = new Judge(fakeEvaluator({
+      '7g7f 3c3d': { cp: 0, bestmove: '2g2f' },
+      '7g7f 3c3d 1g1f': { cp: 200 },
+      '7g7f 3c3d 1g1f 8c8d': { cp: 200, bestmove: '2g2f' },
+      '7g7f 3c3d 1g1f 8c8d 9g9f': { cp: 400 },
+    }));
+    const pos = Position.initial();
+    play(pos, '7g7f', '3c3d');
+    const snap = judge.snapshot();
+    const first = await judge.judge(pos, usiToMove(pos, '1g1f'));
+    expect(first.praise?.comment).toContain('ほう');
+    judge.ignore('mate');
+    expect(judge.snapshot().ignored).toContain('mate');
+    judge.restore(snap);
+    expect(judge.snapshot().ignored).not.toContain('mate');
+    play(pos, '1g1f', '8c8d');
+    // 記憶を戻したので、間隔を空けずにもう一度「ほう」と言える
+    const second = await judge.judge(pos, usiToMove(pos, '9g9f'));
+    expect(second.praise?.comment).toContain('ほう');
   });
 });
