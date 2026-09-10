@@ -7,6 +7,7 @@ export class ScreenHistory {
   private screen: ScreenName = 'title';
   private depth = 0;
   private moving = false;
+  private onAligned?: () => void;
 
   constructor(private onBack: (screen: ScreenName) => void) {
     const stale = history.state?.ojiji;
@@ -19,9 +20,15 @@ export class ScreenHistory {
     }
   }
 
-  go(name: ScreenName): void {
+  // 戻りの履歴移動が未完了なら、次画面の表示を最後の要求1件だけ待たせる。
+  // 古い段数が偶然同じでも、次画面を表示する時点ではその画面の履歴が確定している。
+  go(name: ScreenName, onAligned?: () => void): boolean {
     this.screen = name;
+    this.onAligned = onAligned;
     if (!this.moving) this.align();
+    if (this.moving) return false;
+    this.onAligned = undefined;
+    return true;
   }
 
   private align(): void {
@@ -40,6 +47,11 @@ export class ScreenHistory {
     if (this.moving) {
       this.moving = false;
       this.align();
+      if (!this.moving) {
+        const ready = this.onAligned;
+        this.onAligned = undefined;
+        ready?.();
+      }
       return;
     }
     this.onBack(this.screen);

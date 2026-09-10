@@ -20,7 +20,7 @@ const flat: Evaluator = {
 
 // 手順ごとに決まった評価を返す偽エンジン。SFEN で読まれたら 'sfen:' + SFEN をキーにする。
 // 値を配列にすると MultiPV（最善・次善）として返す。
-// 既定の深さは SHALLOW_DEPTH（14）以上にしておく（深さを指定しないテストで「目安」の添え書きが出ないように）
+// 明示しない探索の深さは16。深さで表示の確かさを区分せず、記録として保持する。
 function fakeEvaluator(table: Record<string, Partial<Analysis> | Partial<Analysis>[]>): Evaluator {
   const lookupAll = async (moves: string[], opts?: { sfen?: string }): Promise<Analysis[]> => {
     const key = opts?.sfen ? `sfen:${opts.sfen}` : moves.join(' ');
@@ -146,7 +146,7 @@ describe('総合判定', () => {
     const bad = await judge.judge(pos, usiToMove(pos, '8h5e'));
     expect(bad.verdict?.kind).toBe('eval');
     expect(bad.verdict?.why).toContain('△同角で角を取られる'); // 取られる駒の名前を入れる
-    expect(bad.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +20（互角）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
+    expect(bad.verdict?.evalLine).toBe(['形勢の目安', '候補 ▲２六歩 → 互角', '指した ▲５五角 → 後手優勢'].join('\n'));
     const good = await judge.judge(pos, usiToMove(pos, '8h2b+'));
     expect(good.verdict).toBeNull();
     expect(good.praise?.comment).toContain('角交換');
@@ -365,7 +365,7 @@ describe('正解と指した手の形勢を並べる', () => {
     const pos = Position.initial();
     play(pos, '7g7f', '3c3d');
     const j = await judge.judge(pos, usiToMove(pos, '8h5e'));
-    expect(j.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +60（互角）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
+    expect(j.verdict?.evalLine).toBe(['形勢の目安', '候補 ▲２六歩 → 互角', '指した ▲５五角 → 後手優勢'].join('\n'));
   });
 });
 
@@ -790,7 +790,7 @@ describe('判定の補助情報', () => {
   });
 });
 
-describe('読みの深さと数字の確からしさ', () => {
+describe('形勢は言葉で示し、探索の深さは記録に残す', () => {
   // ▲７六歩 △３四歩 のあと ▲５五角 とした（△同角でタダ）。正解は ▲２六歩 という設定。指す前の読みの深さだけ変える
   function tableWithDepth(depth: number) {
     return {
@@ -812,28 +812,26 @@ describe('読みの深さと数字の確からしさ', () => {
     expect(j.analysis?.depth).toBe(7);
   });
 
-  it('読みが 14 手未満なら、正解の行の末尾に「（読み N 手・目安）」と添える', async () => {
+  it.each([3, 12, 13, 14, 17, 20])('深さ%sでも、形勢の目安として同じ表示を使う', async (depth) => {
     const pos = Position.initial();
     play(pos, '7g7f', '3c3d');
-    const j = await new Judge(fakeEvaluator(tableWithDepth(3))).judge(pos, usiToMove(pos, '8h5e'));
+    const j = await new Judge(fakeEvaluator(tableWithDepth(depth))).judge(pos, usiToMove(pos, '8h5e'));
     expect(j.verdict?.kind).toBe('eval');
-    expect(j.verdict?.evalLine).toBe(['正解 ▲２六歩 → 形勢 +60（互角）（読み 3 手・目安）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
-    // 駒がぶつかった局面でよくある深さ（10〜13）でも添える
-    const pos2 = Position.initial();
-    play(pos2, '7g7f', '3c3d');
-    const j2 = await new Judge(fakeEvaluator(tableWithDepth(12))).judge(pos2, usiToMove(pos2, '8h5e'));
-    expect(j2.verdict?.evalLine).toContain('（読み 12 手・目安）');
-    expect(j.analysis?.depth).toBe(3);
+    expect(j.verdict?.evalLine).toBe(['形勢の目安', '候補 ▲２六歩 → 互角', '指した ▲５五角 → 後手優勢'].join('\n'));
+    expect(j.analysis?.depth).toBe(depth);
+    expect(j.analysis?.before).toBe(60);
+    expect(j.analysis?.after).toBe(-700);
   });
 
-  // 実測（400ms・MultiPV 2）の深さは序盤 15〜17、駒がぶつかると 10 ほど。しきい値 8 では一度も出なかったので 14 にした
-  it('読みが 14 手以上なら目安とは言わない', async () => {
-    for (const depth of [14, 20]) {
+  it.each([[17, 50, 75, '互角'], [13, 253, 252, '先手よし']] as const)('再査読の深さ%s・評価%s→%sの揺れを過剰な精度で表示しない', async (depth, a, b, expected) => {
+    for (const cp of [a, b]) {
       const pos = Position.initial();
       play(pos, '7g7f', '3c3d');
-      const j = await new Judge(fakeEvaluator(tableWithDepth(depth))).judge(pos, usiToMove(pos, '8h5e'));
-      expect(j.verdict?.evalLine, `depth ${depth}`).toBe(['正解 ▲２六歩 → 形勢 +60（互角）', '指した ▲５五角 → 形勢 -700（後手優勢）'].join('\n'));
-      expect(j.analysis?.depth, `depth ${depth}`).toBe(depth);
+      const table = tableWithDepth(depth);
+      table['7g7f 3c3d 2g2f'].cp = cp;
+      const j = await new Judge(fakeEvaluator(table)).judge(pos, usiToMove(pos, '8h5e'));
+      expect(j.verdict?.evalLine).toBe(['形勢の目安', `候補 ▲２六歩 → ${expected}`, '指した ▲５五角 → 後手優勢'].join('\n'));
+      expect(j.analysis?.before).toBe(cp); // 判定や振り返り用の値は丸めない
     }
   });
 });

@@ -23,7 +23,7 @@ export interface Verdict {
   headline: string; // 一言（画面の見出し）
   why: string; // 説教の本文
   better: Move | null; // 盤上でハイライトする正解の手
-  evalLine?: string; // 「形勢 +120 → -350」のような一行
+  evalLine?: string; // 候補と指した手の形勢を、点数ではなく言葉で比べる
   ignoreKey?: string; // 「このまま進む」を選んだとき同じ叱責を繰り返さないためのキー
   usedPurpose?: boolean; // 内部用: why が「最善手の狙い」の説明を含む（判定後に、相手の狙いを読んで言い換える）
 }
@@ -50,7 +50,7 @@ export interface Judgement {
   // 振り返り用: 指す前と指した後の評価（先手視点）。エンジンが無いときは null。
   // before は「正解を指した後」を読み直したらその値に揃える（振り返りの二つの数字と反応の強さを食い違わせない）。
   // gap は指す前の局面での最善手と次善手の評価の差（正の値。次善が読めなければ null）。「決め手」の判定に使う。
-  // depth は指す前の読みの深さ（数字の確からしさの目安。記録に残す）。
+  // depth は指す前の探索の深さ（検証用の記録。信頼度としては表示しない）。
   // playedBest は指した手がエンジンの最善手だったか（対局中に叱らないのと同じ手を、振り返りでも間違い扱いにしないため）
   analysis?: { before: number; after: number; better: Move | null; gap: number | null; depth: number; playedBest: boolean };
 }
@@ -71,10 +71,6 @@ export const SURPRISE_INTERVAL = 6; // 「ほう」は何手か空けて言う
 export const EVAL_HOPELESS = -1000; // 指す前にこれより悪ければ（後手優勢以上）、何を指しても言わない
 export const MATE_MISSED_MAX = 3; // この手数以内の詰みを見逃したときだけ「詰みを見逃すな」（長い詰みは初心者に見えない）
 export const MATE_ALLOWED_MAX = 5; // この手数以内で詰まされる手だけ「詰まされるぞ」。長い詰みは形勢の落ち幅で判断
-// 指す前の読みがこれより浅ければ、形勢の数字に「目安」と添える（浅い読みの数字を確かなものと思わせない）。
-// これは到達深さの保証ではなく、短時間の読みを断定しないための表示基準。
-// 端末負荷と局面により14に届かないことが多い。頻度を減らすために基準を下げない。
-export const SHALLOW_DEPTH = 14;
 const EVAL_CLAMP = 3000;
 
 // 落ち幅と、落ちた結果の形勢から段階を決める（1 は反応なし）
@@ -127,14 +123,8 @@ export function bestCaptureGain(pos: Position, by: Color): { gain: number; targe
   return best;
 }
 
-export function formatCp(a: Analysis): string {
-  if (a.mate !== null) return a.mate > 0 ? `先手${a.mate}手詰` : `後手${-a.mate}手詰`;
-  const v = Math.max(-EVAL_CLAMP, Math.min(EVAL_CLAMP, a.cp));
-  return (v > 0 ? '+' : '') + String(v);
-}
-
 // 形勢を言葉にする（先手視点）
-export function describeSide(a: Analysis): string {
+export function describeSide(a: Pick<Analysis, 'cp' | 'mate'>): string {
   if (a.mate !== null) return a.mate > 0 ? '先手勝ち' : '後手勝ち';
   const v = a.cp;
   if (v >= 1500) return '先手勝勢';
@@ -148,11 +138,6 @@ export function describeSide(a: Analysis): string {
 
 function clampCp(a: Analysis): number {
   return Math.max(-EVAL_CLAMP, Math.min(EVAL_CLAMP, a.cp));
-}
-
-// 読みが浅ければ「（読み N 手・目安）」。十分な深さなら空
-function depthNote(a: Analysis): string {
-  return a.depth < SHALLOW_DEPTH ? `（読み ${a.depth} 手・目安）` : '';
 }
 
 // 正解 better を指したあと、後手にタダ同然（香車以上の得）で取れる駒が残らないか
@@ -440,12 +425,10 @@ export class Judge {
     return { ...praise(), analysis };
   }
 
-  // 「正解 ▲○○ → 形勢 +350（先手よし）」「指した ▲△△ → 形勢 -120（後手よし）」の二行。
-  // 指す前の読みが浅ければ 1 行目の末尾に「（読み N 手・目安）」と添える
+  // 探索の深さは評価の安定性を保証しない。どの深さでも、候補と指した手を「形勢の目安」として比べる。
   private async compareLine(pos: Position, move: Move, better: Move | null, before: Analysis, after: Analysis): Promise<string> {
-    const note = depthNote(before);
-    const playedLine = `指した ${moveToKanji(move, 0, null, pos)} → 形勢 ${formatCp(after)}（${describeSide(after)}）`;
-    if (!better) return `形勢 ${formatCp(before)} → ${formatCp(after)}（${describeSide(after)}）${note}`;
+    const playedLine = `指した ${moveToKanji(move, 0, null, pos)} → ${describeSide(after)}`;
+    if (!better) return `形勢の目安: ${describeSide(before)} → ${describeSide(after)}`;
     // 正解を指したあとの局面も同じ条件で評価する（無理なら指す前の評価で代用）
     let best: Analysis = before;
     pos.apply(better);
@@ -456,7 +439,8 @@ export class Judge {
     } finally {
       pos.undo();
     }
-    return `正解 ${moveToKanji(better, 0, null, pos)} → 形勢 ${formatCp(best)}（${describeSide(best)}）${note}
+    return `形勢の目安
+候補 ${moveToKanji(better, 0, null, pos)} → ${describeSide(best)}
 ${playedLine}`;
   }
 
@@ -467,7 +451,7 @@ ${playedLine}`;
     if (before.bestmove === moveToUsi(move)) return null;
     // すでに負けている局面では、何を指しても評価が下がるので言わない
     if (clampCp(before) <= EVAL_HOPELESS) return null;
-    const evalLine = `形勢 ${formatCp(before)} → ${formatCp(after)}`;
+    const evalLine = `形勢の目安: ${describeSide(before)} → ${describeSide(after)}`;
     const better = before.bestmove && before.bestmove !== moveToUsi(move) ? safeMove(pos, before.bestmove) : null;
 
     // 詰みを見逃した

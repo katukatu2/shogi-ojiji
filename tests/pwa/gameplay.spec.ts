@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-test('製品版で実際に角を損する手を指し、投了後にその局面を振り返れる', async ({ page }) => {
+for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }]) {
+test(`${viewport.width}×${viewport.height} 製品版で実際に角を損する手を指し、投了後にその局面を振り返れる`, async ({ page }) => {
+  await page.setViewportSize(viewport);
   await page.goto('/');
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller && crossOriginIsolated).catch(() => false)).toBe(true);
   expect(await page.evaluate(() => '__ojiji' in window)).toBe(false);
@@ -23,6 +25,11 @@ test('製品版で実際に角を損する手を指し、投了後にその局�
   await expect(cutin).toContainText(/角|馬/);
   const played = closed ? '▲３三角成' : '▲５五角';
   await expect(cutin).toContainText(played);
+  await expect(cutin.locator('.evalline')).toContainText('形勢の目安');
+  await expect(cutin.locator('.evalline')).not.toHaveText(/[0-9%]|読み|正解/);
+  await expect(cutin.locator('.better')).toContainText('候補の手:');
+  await expect(cutin.getByRole('button', { name: '指し直す', exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(cutin.getByRole('button', { name: 'このまま進む', exact: true })).toBeInViewport({ ratio: 1 });
   await cutin.getByRole('button', { name: 'このまま進む', exact: true }).click();
   await expect(page.getByText('5手目', { exact: true })).toBeVisible();
   page.once('dialog', (dialog) => { expect(dialog.message()).toBe('投了しますか？'); void dialog.accept(); });
@@ -34,6 +41,8 @@ test('製品版で実際に角を損する手を指し、投了後にその局�
   await moment.click();
   const modal = page.locator('.moment-view');
   await expect(modal).toBeVisible();
+  await expect(modal.locator('.moment-eval')).toContainText('形勢の目安（先手視点）');
+  await expect(modal.locator('.moment-eval')).not.toHaveText(/[0-9%]|読み/);
   const before = await page.locator('.board .cell').allTextContents();
   // 実対局の現在盤とは別に、3手目の指す前を復元していることを確認する。
   const mini = modal.locator('.mini-board .cell');
@@ -52,3 +61,4 @@ test('製品版で実際に角を損する手を指し、投了後にその局�
   const progress = await page.evaluate(() => JSON.parse(localStorage.getItem('ojiji.progress.v2')!));
   expect(Object.values(progress.styles).reduce((total: number, rec: any) => total + rec.games, 0)).toBe(1);
 });
+}

@@ -2,6 +2,8 @@
 
 作成日: 2026-09-10
 
+**最新の再査読対応:** `bafb87f` に対する原文は [claude-rereview.md](claude-rereview.md)、今回の修正は [codex-rereview-response.md](codex-rereview-response.md)、次の限定確認依頼は [claude-followup-review-request.md](claude-followup-review-request.md)。現状の検証件数・残条件は [release-audit.md](release-audit.md) を参照。直前の独立評価は指導7・ゲーム7・リリース6・品質保証7。
+
 **Claude査読対応後の更新:** 原査読は [claude-review.md](claude-review.md)、18項目への回答は [codex-review-response.md](codex-review-response.md)、次にClaudeへ渡す文は [claude-rereview-request.md](claude-rereview-request.md)。以下の初期引き継ぎの件数・未実装一覧は履歴資料であり、現状は [release-audit.md](release-audit.md) を優先する。
 
 **Codex更新（2026-09-10）:** 以下は元の引き継ぎ時点の記録。現在の変更・検証・残作業は [release-audit.md](release-audit.md)、Claudeへの次の依頼は [claude-review-request.md](claude-review-request.md) を参照。今回からiPhone App Store版も対象、名称の「（仮）」は外し、ストア原案はCodexが作成済み。公開先・連絡先は引き続き未定。

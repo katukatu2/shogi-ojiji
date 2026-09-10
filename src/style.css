@@ -12,13 +12,14 @@
   --hint: rgba(40, 180, 90, 0.55);
   --panel: #fffaf0;
   --navy: #2b3a55;
+  --offline-status-height: 0px;
   /* 盤の幅。横幅・画面の高さ（盤以外の行に約 250px）・上限の小さい方 */
-  --board-w: min(100vw - 16px, 100vh - 250px, 480px);
+  --board-w: min(100vw - 16px, 100vh - 250px - var(--offline-status-height), 480px);
 }
 
 @supports (height: 100dvh) {
   :root {
-    --board-w: min(100vw - 16px, 100dvh - 250px, 480px);
+    --board-w: min(100vw - 16px, 100dvh - 250px - var(--offline-status-height), 480px);
   }
 }
 
@@ -27,14 +28,22 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-html,
 #offline-status {
-  margin: 12px auto;
-  padding: 8px 16px;
-  max-width: 680px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+  width: 100%;
+  margin: 0;
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  background: #fff1d6;
+  border-bottom: 1px solid var(--board-line);
   font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
+html,
 body {
   margin: 0;
   height: 100%;
@@ -44,6 +53,8 @@ body {
   touch-action: manipulation;
   overscroll-behavior: none;
 }
+
+body { padding-top: var(--offline-status-height); }
 
 #app {
   min-height: 100%;
@@ -63,8 +74,8 @@ button {
   align-items: center;
   gap: 6px;
   padding: 8px 8px calc(12px + env(safe-area-inset-bottom));
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: calc(100vh - var(--offline-status-height));
+  min-height: calc(100dvh - var(--offline-status-height));
 }
 
 .topbar {
@@ -376,7 +387,7 @@ button {
 /* ===== オーバーレイ共通 ===== */
 .overlay {
   position: fixed;
-  inset: 0;
+  inset: var(--offline-status-height) 0 0;
   background: rgba(20, 12, 6, 0.78);
   display: flex;
   align-items: center;
@@ -395,7 +406,7 @@ button {
   padding: 18px;
   width: 100%;
   max-width: 420px;
-  max-height: 92vh;
+  max-height: calc(92vh - var(--offline-status-height));
   overflow: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
@@ -561,7 +572,8 @@ button {
 
 /* ===== タイトル ===== */
 .title-screen {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--offline-status-height));
+  min-height: calc(100dvh - var(--offline-status-height));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1196,8 +1208,8 @@ raizo-rig {
 
 /* ===== 対局設定 ===== */
 .settings-screen {
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: calc(100vh - var(--offline-status-height));
+  min-height: calc(100dvh - var(--offline-status-height));
   display: flex;
   flex-direction: column;
   align-items: center;

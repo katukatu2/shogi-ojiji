@@ -1,7 +1,12 @@
 import { el } from './dom';
 import { miniBoard, positionAfter } from './miniboard';
-import { safeMove, SHALLOW_DEPTH } from '../style/judge';
-import { momentLabel, momentCaption, winProb, KeyMoment } from '../game/review';
+import { safeMove, describeSide } from '../style/judge';
+import { momentLabel, momentCaption, KeyMoment } from '../game/review';
+
+export function reviewEvaluation(before: number | null, after: number | null): string {
+  const side = (cp: number | null) => cp === null || !Number.isFinite(cp) ? '判定なし' : describeSide({ cp, mate: null });
+  return `形勢の目安（先手視点）: ${side(before)} → ${side(after)}`;
+}
 
 export function renderMoment(momentEl: HTMLElement, moments: KeyMoment[], index: number, after = false, opts: { won?: boolean } = {}): void {
   const mo = moments[index];
@@ -34,18 +39,11 @@ export function renderMoment(momentEl: HTMLElement, moments: KeyMoment[], index:
   toggle.append(b1, b2);
   panel.append(toggle);
 
-  const fmt = (v: number | null): string => {
-    if (v === null) return '?';
-    if (Math.abs(v) > 3000) return v > 0 ? '先手の詰み筋' : '後手の詰み筋';
-    return (v > 0 ? '+' : '') + String(v);
-  };
-  const pct = (v: number | null): string => (v === null ? '?' : `${Math.round(winProb(v))}%`);
-  // 読みが浅かった数字は確かなものと思わせない（判定のカットインと同じ「目安」の添え書き）
-  const note = typeof log.depth === 'number' && log.depth < SHALLOW_DEPTH ? `（読み ${log.depth} 手・目安）` : '';
-  panel.append(el('div', 'moment-eval', `形勢（先手視点）: ${fmt(log.before)} → ${fmt(log.after)}　勝率 ${pct(log.before)} → ${pct(log.after)}${note}`));
+  // カットインと同じ言葉による表示。点数・換算勝率・深さは記録の選定と検証に使う。
+  panel.append(el('div', 'moment-eval', reviewEvaluation(log.before, log.after)));
   panel.append(el('p', 'moment-why', momentCaption(mo, opts)));
   if (mo.kind === 'blunder' && log.betterKanji) {
-    panel.append(el('div', 'moment-better', `正解: ${log.betterKanji}${better ? '（指す前の盤に緑で表示）' : ''}`));
+    panel.append(el('div', 'moment-better', `候補の手: ${log.betterKanji}${better ? '（指す前の盤に緑で表示）' : ''}`));
   }
 
   const nav = el('div', 'btn-row');

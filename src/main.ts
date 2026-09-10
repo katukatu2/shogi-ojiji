@@ -176,7 +176,7 @@ const navigation = new ScreenHistory((screen) => {
   if (screen === 'title') goToScreen('title');
 });
 
-function goToScreen(name: ScreenName): void { navigation.go(name); }
+function goToScreen(name: ScreenName, onAligned?: () => void): boolean { return navigation.go(name, onAligned); }
 
 // ===== タイトル =====
 // タイトルは、オジジ・題名・一言・ボタン・遊び方だけ。強さと戦法は「対局設定」で選ぶ。
@@ -200,10 +200,10 @@ function showTitle(): void {
 let pendingStyleId: string | null = null;
 
 function showSettings(): void {
+  if (!goToScreen('settings', showSettings)) return;
   resetToast();
   stopSfx();
   game = null;
-  goToScreen('settings');
   app.replaceChildren(renderSettings({
     progress, selectedStyleId: pendingStyleId,
     onSelectStyle: (id) => { pendingStyleId = id; },
@@ -216,13 +216,13 @@ function showSettings(): void {
 
 // ===== 対局 =====
 function startGame(style: Style): void {
+  if (!goToScreen('game', () => startGame(style))) return;
   resetToast();
   stopSfx();
   ensureEngine();
   progress.lastStyle = style.id;
   pendingStyleId = style.id;
   saveProgress(progress);
-  goToScreen('game');
   game = {
     style,
     pos: Position.initial(),
@@ -885,7 +885,7 @@ function showCutin(v: Verdict): Promise<boolean> {
     panel.append(el('p', 'why', v.why));
     if (v.evalLine) panel.append(el('div', 'evalline', v.evalLine));
     // カットイン中は手がまだ指されていないので、game.pos は指す前の局面
-    if (v.better) panel.append(el('div', 'better', `正解: ${moveToKanji(v.better, 0, null, game?.pos)}（盤面に緑で表示）`));
+    if (v.better) panel.append(el('div', 'better', `候補の手: ${moveToKanji(v.better, 0, null, game?.pos)}（盤面に緑で表示）`));
     const row = el('div', 'btn-row');
     const redo = el('button', 'btn primary', '指し直す');
     const go = el('button', 'btn', 'このまま進む');

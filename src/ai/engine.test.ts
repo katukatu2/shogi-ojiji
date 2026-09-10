@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { Engine, EngineFactory, MATE_SCORE, parseInfo, watchdogMs } from './engine';
 import { Position } from '../engine/position';
 import { moveToUsi, usiToMove } from '../engine/notation';
-import { ANALYZE_MS, SHALLOW_DEPTH } from '../style/judge';
+import { ANALYZE_MS } from '../style/judge';
 
 const require = createRequire(import.meta.url);
 
@@ -78,7 +78,7 @@ it('本体の2スレッド・400ms・MultiPV 2でも合法な応手を返し、�
         expect(Number.isFinite(value.cp)).toBe(true);
         expect(value.depth).toBeGreaterThan(0);
       }
-      measured.push({ ply: moves.length, depth: values[0].depth, reference: values[0].depth < SHALLOW_DEPTH });
+      measured.push({ ply: moves.length, depth: values[0].depth, cp: values[0].cp, bestmove: values[0].bestmove });
     }
     console.info('実条件での到達深さ（端末依存）:', measured);
   } finally { engine.terminate(); }

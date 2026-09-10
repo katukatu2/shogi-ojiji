@@ -186,14 +186,18 @@ if (typeof window === 'undefined') {
   const status = (ready) => {
     const render = () => {
       let notice = document.getElementById('offline-status');
+      const syncHeight = () => document.documentElement.style.setProperty('--offline-status-height', `${notice.hidden ? 0 : notice.getBoundingClientRect().height}px`);
       if (!notice) {
         notice = document.createElement('p');
         notice.id = 'offline-status';
         notice.setAttribute('role', 'status');
-        document.body.append(notice);
+        document.body.prepend(notice);
+        // 折り返し・文字拡大・画面回転でも、案内の実寸だけアプリの場所を空ける。
+        new ResizeObserver(syncHeight).observe(notice);
       }
       notice.hidden = ready;
-      notice.textContent = ready ? '' : 'オフライン用の保存ができていません。接続中は遊べます。通信が戻ると保存を再試行します。';
+      notice.textContent = ready ? '' : 'オフライン保存は未完了です。接続中は遊べます。通信が戻ると再試行します。';
+      syncHeight();
     };
     if (document.body) render(); else document.addEventListener('DOMContentLoaded', render, { once: true });
   };
