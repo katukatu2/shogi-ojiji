@@ -7,9 +7,12 @@
 //   エンジンが使えない環境では出さない（誤爆を防ぐ）。
 //
 // COMMON_* はどの戦法でも使う。戦法ごとの形はそれぞれの戦法ファイルから参照する。
+//
+// 形だけの NG は「囲え」「玉を寄せるな」といった序盤の方針の話なので、戦いが始まった局面では
+// guarded() で黙らせる（isFighting を参照）。勧める手は canMove() で合法か確かめてから台詞に出す。
 
 import { Position } from '../engine/position';
-import { Move, Sq } from '../engine/types';
+import { Move, PieceType, Sq } from '../engine/types';
 
 export interface PatternContext {
   before: Position; // 指す前（先手番）
@@ -87,8 +90,66 @@ function movedGuardsNear(pos: Position, k: Sq): number {
   return n;
 }
 
+const PROMOTED: ReadonlySet<PieceType> = new Set<PieceType>(['TO', 'NY', 'NK', 'NG', 'UM', 'RY']);
+const CASTLE_TARGET: Sq = { x: 3, y: 7 }; // ６八（左へ囲うときの入口）
+
+// 玉の周りに相手の駒がいるとみなす範囲（筋・段の差）
+const KING_DANGER = 2;
+
+// 戦いが始まっているか。形だけの NG（囲え・玉を寄せるななどの序盤の方針）は、
+// ここが真なら黙る。中盤の戦術局面では方針の話が当てはまらず、
+// 「▲６八玉から囲え」のように指せない手を勧めてしまうため。
+export function isFighting({ before, move }: PatternContext): boolean {
+  // (1) 相手の駒が自陣（七〜九段）に成り込んでいる
+  for (let i = 0; i < 81; i++) {
+    const c = before.board[i];
+    if (c && c.color === 1 && PROMOTED.has(c.type) && Math.floor(i / 9) >= 6) return true;
+  }
+  // (2) 自玉が王手されている（＝指した手は王手を受ける手）
+  if (before.inCheck(0)) return true;
+  // (3) 指した手が相手の駒を取る手
+  const victim = before.get(move.to.x, move.to.y);
+  if (victim && victim.color === 1) return true;
+  // (4) 自玉の周囲 2 マスに相手の駒がある（利きではなく駒そのもの）
+  const k = senteKing(before);
+  if (k) {
+    for (let dy = -KING_DANGER; dy <= KING_DANGER; dy++) {
+      for (let dx = -KING_DANGER; dx <= KING_DANGER; dx++) {
+        const x = k.x + dx;
+        const y = k.y + dy;
+        if (!Position.inside(x, y)) continue;
+        const c = before.get(x, y);
+        if (c && c.color === 1) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// 形だけの NG に共通の guard をかぶせる。戦いが始まっていれば発火させない
+export function guarded(p: BadPattern): BadPattern {
+  return {
+    ...p,
+    check(ctx: PatternContext): string | null {
+      if (isFighting(ctx)) return null;
+      return p.check(ctx);
+    },
+  };
+}
+
+// 勧める手（先手の手）が本当に指せるか。指せない手は台詞に出さない
+export function canMove(pos: Position, from: Sq, to: Sq): boolean {
+  let p = pos;
+  if (p.turn !== 0) {
+    p = pos.clone();
+    p.turn = 0;
+  }
+  return p.legalMoves().some((m) => !!m.from && m.from.x === from.x && m.from.y === from.y && m.to.x === to.x && m.to.y === to.y);
+}
+
 // ===== どの戦法でも共通の NG =====
-export const COMMON_BAD: BadPattern[] = [
+// 形だけの NG（minDrop 無し）は guarded() を通す。末尾の .map(guarded) を参照
+const COMMON_BAD_RAW: BadPattern[] = [
   {
     id: 'attack-without-castle',
     headline: '囲わずに攻めるでない！',
@@ -99,7 +160,9 @@ export const COMMON_BAD: BadPattern[] = [
       const attacking = move.piece !== 'OU' && move.piece !== 'KI' && move.to.y <= 4;
       if (!attacking) return null;
       if (advancedAttackers(after) < 2) return null;
-      return '玉が５九に裸のままじゃ。攻め合いになれば、囲っていない方が先に倒れる。まず▲６八玉から左へ囲え。';
+      const head = '玉が５九に裸のままじゃ。攻め合いになれば、囲っていない方が先に倒れる。';
+      // ▲６八玉が指せるときだけ具体手を出す（玉を動かす手ではないので、玉は指す前も５九にいる）
+      return head + (canMove(before, KING_START, CASTLE_TARGET) ? 'まず▲６八玉から左へ囲え。' : 'まず玉を左へ囲え。');
     },
   },
   {
@@ -113,7 +176,9 @@ export const COMMON_BAD: BadPattern[] = [
       if (!r || r.y !== 7 || r.x < 6) return null;
       if (move.to.x <= move.from.x) return null; // 飛車の方（右）へ寄る手だけ
       if (Math.abs(move.to.x - r.x) > 2) return null; // ４八・３八など飛車寄り
-      return '飛車のそばに玉を置くな。飛車は狙われる駒、玉まで巻き込まれる。居飛車なら玉は左へ、▲６八玉から囲え。';
+      const head = '飛車のそばに玉を置くな。飛車は狙われる駒、玉まで巻き込まれる。';
+      // ▲６八玉が指せるときだけ具体手を出す
+      return head + (canMove(before, move.from, CASTLE_TARGET) ? '居飛車なら玉は左へ、▲６八玉から囲え。' : '居飛車なら玉は左へ囲うのが筋じゃ。');
     },
   },
   {
@@ -144,6 +209,8 @@ export const COMMON_BAD: BadPattern[] = [
     },
   },
 ];
+
+export const COMMON_BAD: BadPattern[] = COMMON_BAD_RAW.map(guarded);
 
 // ===== どの戦法でも共通の良い形 =====
 export const COMMON_GOOD: GoodPattern[] = [
