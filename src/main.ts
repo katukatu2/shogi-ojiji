@@ -30,7 +30,7 @@ const FILE_LABELS = ['９', '８', '７', '６', '５', '４', '３', '２', '�
 const RANK_LABELS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
 
 
-// 対局の結果。'draw' は千日手・持将棋・手数上限の引き分け
+// 対局の結果。'draw' は千日手・手数上限の引き分け
 type Result = GameResult;
 
 
@@ -246,6 +246,7 @@ function startGame(style: Style): void {
     task: pickTask(style, doneTaskSet(progress), progress.styles[style.id]?.games ?? 0),
     logs: [],
     judgeStates: [],
+    enteringNotified: new Set(),
   };
   selectedSq = null;
   selectedHand = null;
@@ -288,6 +289,8 @@ let resultEl: HTMLElement;
 let momentEl: HTMLElement;
 let hintBtn: HTMLButtonElement | null = null;
 let mattaBtn: HTMLButtonElement | null = null;
+let declarationBtn: HTMLButtonElement | null = null;
+let enteringStatusEl: HTMLElement;
 
 // ヒント・待ったの押せる／押せないを今の状況に合わせる（終局後・思考中・ヒントの計算中は押せない）
 function updateControls(): void {
@@ -295,6 +298,51 @@ function updateControls(): void {
   const off = !g || g.result !== null || g.busy || hintBusy;
   if (hintBtn) hintBtn.disabled = off;
   if (mattaBtn) mattaBtn.disabled = off || g!.pos.moves.length < 2;
+  if (declarationBtn) declarationBtn.disabled = off || !g!.pos.enteringKing(0).canDeclare;
+}
+
+function renderEnteringKing(): void {
+  if (!game) return;
+  const own = game.pos.enteringKing(0);
+  const npc = game.pos.enteringKing(1);
+  enteringStatusEl.hidden = !own.kingInZone && !npc.kingInZone;
+  enteringStatusEl.replaceChildren();
+  declarationBtn = null;
+  if (enteringStatusEl.hidden) return;
+  const statusLine = (who: string, status: typeof own) => `${who}が入玉：敵陣の駒 ${status.zonePieces}/10枚・点数 ${status.points}/${status.requiredPoints}点`;
+  if (own.kingInZone) enteringStatusEl.append(el('div', '', statusLine('あなた', own)));
+  if (npc.kingInZone) enteringStatusEl.append(el('div', '', statusLine('オジジ', npc)));
+  enteringStatusEl.append(el('div', '', '玉以外の敵陣の駒と持ち駒を数え、飛・角（成駒も）は5点、他は1点。'));
+  if (own.kingInZone) {
+    enteringStatusEl.append(el('div', '', own.inCheck ? '王手中は宣言できません。まず王手を防ぎましょう。' : '自分の手番で、王手がなく枚数・点数を満たせば宣言して勝てます。'));
+    declarationBtn = el('button', 'btn', '持将棋を宣言する');
+    declarationBtn.addEventListener('click', declarePlayerWin);
+    enteringStatusEl.append(declarationBtn);
+  }
+}
+
+function declarePlayerWin(): void {
+  const g = game;
+  if (!g || g.result || g.busy || hintBusy || !g.pos.enteringKing(0).canDeclare) return;
+  // ボタンは成立時だけ押せる。宣言操作なしで先手を点数負けにしない。
+  const result = g.pos.declareEnteringKing(0);
+  endGame(result === 'gote-loses' ? 'win' : 'lose', '入玉宣言（あなた）');
+}
+
+function announceEnteringKing(): boolean {
+  const g = game;
+  if (!g) return false;
+  for (const color of [0, 1] as const) {
+    if (g.enteringNotified.has(color) || !g.pos.enteringKing(color).kingInZone) continue;
+    const message = color === 0
+      ? 'おぬしの玉が入玉したぞ。敵陣に玉以外10枚・持ち駒込み28点・王手なしで、自分の番に宣言勝ちできるぞ。'
+      : 'ワシの玉が入玉したぞ。敵陣に玉以外10枚・持ち駒込み27点・王手なしなら、ワシの番に勝ちを宣言するぞ。';
+    if (showToast('thinking', '入玉', message, 6500, 'rule')) {
+      g.enteringNotified.add(color);
+      return true;
+    }
+  }
+  return false;
 }
 
 function updateEngineLabel(): void {
@@ -408,6 +456,11 @@ function buildGameScreen(): void {
   controls.append(hint, matta, resign, quit);
   g.append(controls);
 
+  enteringStatusEl = el('div', 'entering-status');
+  enteringStatusEl.setAttribute('aria-live', 'polite');
+  enteringStatusEl.hidden = true;
+  g.append(enteringStatusEl);
+
   cutinEl = el('div', 'overlay cutin');
   cutinEl.hidden = true;
   promoEl = el('div', 'overlay');
@@ -475,6 +528,7 @@ function render(): void {
 
   moveNoEl.textContent = `${pos.moves.length + 1}手目`;
   scoldEl.textContent = `叱られ ${game.scolded}回`;
+  renderEnteringKing();
 
   // 最終手の表記は指す前の局面で作ってある（game.lastMoveKanji）
   if (game.busy && !game.result && cutinEl.hidden) {
@@ -621,7 +675,7 @@ async function tryMove(m: Move): Promise<void> {
       g.judge.ignore(verdict.ignoreKey);
       hintMove = null;
       g.judgeStates.push(snap);
-      commit(m, null);
+      commit(m, null, undefined, true);
       lineTurn = turnId; // カットインがこの手の一言。続くオジジの独り言は出さない
     } else {
       // 指さなかった手なので、記録も判定の記憶も指す前に戻す
@@ -646,29 +700,30 @@ function kanjiBefore(pos: Position, m: Move, color: Color): string {
   return moveToKanji(m, color, prev, pos);
 }
 
-// 千日手・持将棋・手数上限による終局。成立していなければ null。sente（先手）はプレイヤー
+// 千日手・手数上限による自動終局。入玉はここで勝敗を付けず、別の宣言操作で決着する。
 function ruleEnding(pos: Position): { result: Result; reason: string } | null {
   const rep = pos.repetition();
   if (rep !== 'none') {
     if (rep === 'draw') return { result: 'draw', reason: '千日手' };
     return { result: rep === 'sente-loses' ? 'lose' : 'win', reason: '連続王手の千日手' };
   }
-  const ek = pos.enteringKing();
-  if (ek !== 'none') return { result: ek === 'draw' ? 'draw' : ek === 'sente-loses' ? 'lose' : 'win', reason: '持将棋' };
   if (pos.isTooLong()) return { result: 'draw', reason: `${Position.MAX_PLIES} 手` };
   return null;
 }
 
-function commit(m: Move, praise: Praise | null, line?: () => void): void {
+function commit(m: Move, praise: Praise | null, line?: () => void, alreadySpoken = false): void {
   if (!game) return;
   turnId++;
+  if (alreadySpoken) lineTurn = turnId; // この手には既にカットインを表示した
   hintedUsi = null; // 手が確定したので、ヒントの手はここで忘れる
   const captured = game.pos.get(m.to.x, m.to.y);
   game.lastMoveKanji = kanjiBefore(game.pos, m, 0);
   game.pos.apply(m);
   playPiece();
   game.lastMove = m;
-  if (line) {
+  if (announceEnteringKing()) {
+    // 入玉の説明は良し悪しの5段階とは別の一言。通常の反応と重ねない。
+  } else if (line) {
     line(); // この手への反応（段階 2・3 の一言）。独り言より先に出す
   } else if (praise && praise.comment) {
     if (!game.learned.some((l) => l.comment === praise.comment)) game.learned.push(praise);
@@ -699,6 +754,12 @@ async function npcMove(): Promise<void> {
   const g = game;
   if (!g || g.result) return;
   const pos = g.pos;
+  if (pos.enteringKing(1).canDeclare) {
+    // オジジも自分の手番で条件を満たす場合だけ宣言する。相手の点数不足では宣言しない。
+    const result = pos.declareEnteringKing(1);
+    endGame(result === 'sente-loses' ? 'lose' : 'win', '入玉宣言（オジジ）');
+    return;
+  }
   let m: Move | null = null;
   try {
     // まずは自分の戦法の駒組み。損をするならエンジンに任せる
@@ -740,7 +801,7 @@ async function npcMove(): Promise<void> {
     endGame(ending.result, ending.reason);
     return;
   }
-  ojijiMutters(g, m);
+  if (!announceEnteringKing()) ojijiMutters(g, m);
   if (nodEl.hidden) rig.settle('idle');
   g.judge.prefetch(pos);
 }
@@ -908,7 +969,7 @@ function showCutin(v: Verdict): Promise<boolean> {
 // 吹き出しに一言を出し、オジジを対応する動作にする。
 // 一手につきオジジの台詞は一つ。プレイヤーの手（とそれに続くオジジの手）を「一手」と数え、
 // その手について最初に出た台詞だけを見せる。ヒント・待った・課題の表示（kind = 'ui'）は手と無関係なのでいつでも出す。
-type ToastKind = 'reaction' | 'mutter' | 'ui';
+type ToastKind = 'reaction' | 'mutter' | 'rule' | 'ui';
 let turnId = 0; // プレイヤーが指すたびに増える
 let lineTurn = -1; // 台詞を出した手の番号
 const BUBBLE_GAP_MS = 1500; // 吹き出しが消えてから次を出すまでの間。続けざまに出さない
@@ -924,17 +985,18 @@ function resetToast(): void {
   lineTurn = -1;
 }
 
-function showToast(state: RigState, title: string, body: string, ms: number, kind: ToastKind = 'reaction'): void {
+function showToast(state: RigState, title: string, body: string, ms: number, kind: ToastKind = 'reaction'): boolean {
   // 吹き出しが出ている間と、消えた直後は、どんな台詞も出さない（置き換えも順番待ちもしない）。
   // これで台詞が重なったり、続けざまに出たりしない
-  if (!nodEl.hidden) return;
-  if (performance.now() - bubbleHiddenAt < BUBBLE_GAP_MS) return;
+  if (!nodEl.hidden) return false;
+  if (performance.now() - bubbleHiddenAt < BUBBLE_GAP_MS) return false;
   if (kind !== 'ui') {
-    if (lineTurn === turnId) return; // この手にはもう一言出している
+    if (lineTurn === turnId) return false; // この手にはもう一言出している
     lineTurn = turnId;
   }
   const mine = ++toastSerial;
   nodEl.className = 'bubble' + (state === 'doubtful' || state === 'bad' || state === 'angry' ? ' stern' : '');
+  nodEl.classList.toggle('rule', kind === 'rule');
   nodEl.innerHTML = '';
   if (!rig.available) {
     const svg = el('div', 'bubble-face');
@@ -959,6 +1021,7 @@ function showToast(state: RigState, title: string, body: string, ms: number, kin
   } else {
     rig.settle(state);
   }
+  return true;
 }
 
 // rig の状態名 → SVG の表情名（フォールバック用）
@@ -976,7 +1039,8 @@ function showNod(p: Praise): void {
 const RULE_ENDING_NOTE: Record<string, string> = {
   '千日手': '同じ局面が 4 回現れた',
   '連続王手の千日手': '王手を続けた側の負け',
-  '持将棋': '両方の玉が入玉した',
+  '入玉宣言（あなた）': 'あなたが27点法の条件を満たして宣言した',
+  '入玉宣言（オジジ）': 'オジジが27点法の条件を満たして宣言した',
 };
 
 // 対局を終える。reason があるときは詰みではなく、千日手・持将棋・手数上限による終局

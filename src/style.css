@@ -1152,6 +1152,17 @@ raizo-rig {
   display: none;
 }
 
+/* 入玉の条件説明は顔の横から下へ伸ばし、小さな画面でも上端からはみ出さない。 */
+.bubble.rule { bottom: auto; top: 0; }
+.bubble.rule::before {
+  top: 16px;
+  bottom: auto;
+  left: -8px;
+  border: 8px solid transparent;
+  border-right-color: rgba(43, 58, 85, 0.94);
+  border-left: 0;
+}
+
 .bubble.stern {
   background: rgba(90, 40, 30, 0.94);
 }
@@ -1267,6 +1278,17 @@ raizo-rig {
   border-color: var(--navy);
   box-shadow: inset 0 0 0 2px var(--navy);
 }
+
+.entering-status {
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.entering-status[hidden] { display: none; }
+.entering-status .btn { margin-top: 6px; width: 100%; }
 
 /* 選んだ戦法の次の課題・皆伝の条件 */
 .preview {

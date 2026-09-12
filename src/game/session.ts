@@ -1,5 +1,5 @@
 import type { Position } from '../engine/position';
-import type { Move, Sq } from '../engine/types';
+import type { Move, Sq, Color } from '../engine/types';
 import type { Judge, JudgeState, Praise } from '../style/judge';
 import type { Style, PlanVariant } from '../style/types';
 import type { PlanState } from '../style/plan';
@@ -28,4 +28,5 @@ export interface Game {
   task: Task; // 今日の課題
   logs: MoveLog[]; // 振り返り用の手の記録
   judgeStates: JudgeState[]; // 各手を指す前の Judge の記憶（待ったで戻すため。手が確定するたびに 1 つ積む）
+  enteringNotified: Set<Color>; // 入玉の一言を出した側。待ったで戻しても繰り返さない
 }

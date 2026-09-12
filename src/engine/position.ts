@@ -36,13 +36,22 @@ interface Snapshot {
   check: boolean;
 }
 
-// 千日手・持将棋の判定結果。'none' は成立していない。sente = 先手（color 0）
+// 千日手・宣言の判定結果。'none' は成立していない。sente = 先手（color 0）
 export type RuleEnding = 'none' | 'draw' | 'sente-loses' | 'gote-loses';
+
+export interface EnteringKingStatus {
+  kingInZone: boolean;
+  inCheck: boolean;
+  zonePieces: number;
+  points: number;
+  requiredPoints: number;
+  canDeclare: boolean;
+}
 
 // 千日手になる同一局面の回数
 const REPETITION_COUNT = 4;
-// 持将棋（24 点法）の点数。飛・角とその成駒は 5 点、玉以外の他の駒は 1 点
-const ENTERING_KING_POINTS = 24;
+// 入玉宣言（27点法）: 先手28点、後手27点。盤上は敵陣の自駒だけを数える。
+const ENTERING_KING_POINTS = [28, 27] as const;
 // 持将棋の宣言に必要な、敵陣に入っている玉以外の駒の枚数
 const ENTERING_KING_PIECES = 10;
 const BIG_PIECES: ReadonlySet<PieceType> = new Set<PieceType>(['HI', 'KA', 'RY', 'UM']);
@@ -429,36 +438,33 @@ export class Position {
     return 'draw';
   }
 
-  // 持将棋（入玉）: 玉が敵陣に入っただけでは終わらない。宣言法の条件に寄せて、
-  //   ・両方の玉が敵陣にいる
-  //   ・手番側が王手されていない（王手されている側は宣言できない）
-  //   ・両方の側が玉以外の駒を敵陣に 10 枚以上入れている
-  // の三つがそろったときだけ 24 点法で判定する。そろわなければ 'none'（対局は続く）。
-  // 24 点法では両方 24 点以上なら引き分け、24 点未満の側が負け
-  //（駒が全部あれば合計 54 点なので、両方 24 点未満にはならない）
-  enteringKing(): RuleEnding {
-    const sente = this.findKing(0);
-    const gote = this.findKing(1);
-    if (!sente || !gote || !Position.inPromotionZone(sente.y, 0) || !Position.inPromotionZone(gote.y, 1)) return 'none';
-    if (this.inCheck(this.turn)) return 'none';
-    const points: [number, number] = [0, 0];
-    const inZone: [number, number] = [0, 0]; // 敵陣にいる玉以外の駒の枚数
+  // 状況を読むだけでは勝敗を付けない。相手玉の入玉や相手の点数は宣言条件ではない。
+  // CSA大会規定 第23条の27点法。持ち時間制は本アプリにはない。
+  enteringKing(color: Color = this.turn): EnteringKingStatus {
+    const king = this.findKing(color);
+    const kingInZone = king !== null && Position.inPromotionZone(king.y, color);
+    const inCheck = this.inCheck(color);
+    let points = 0;
+    let zonePieces = 0;
     for (let i = 0; i < 81; i++) {
       const c = this.board[i];
-      if (!c || c.type === 'OU') continue;
-      points[c.color] += BIG_PIECES.has(c.type) ? 5 : 1;
-      if (Position.inPromotionZone(Math.floor(i / 9), c.color)) inZone[c.color]++;
+      if (!c || c.color !== color || c.type === 'OU' || !Position.inPromotionZone(Math.floor(i / 9), color)) continue;
+      points += BIG_PIECES.has(c.type) ? 5 : 1;
+      zonePieces++;
     }
-    if (inZone[0] < ENTERING_KING_PIECES || inZone[1] < ENTERING_KING_PIECES) return 'none';
-    for (const color of [0, 1] as Color[]) {
-      const hand = this.hands[color];
-      for (const hp of Object.keys(hand) as HandPiece[]) {
-        points[color] += hand[hp] * (BIG_PIECES.has(hp) ? 5 : 1);
-      }
+    const hand = this.hands[color];
+    for (const hp of Object.keys(hand) as HandPiece[]) {
+      points += hand[hp] * (BIG_PIECES.has(hp) ? 5 : 1);
     }
-    if (points[0] < ENTERING_KING_POINTS) return 'sente-loses';
-    if (points[1] < ENTERING_KING_POINTS) return 'gote-loses';
-    return 'draw';
+    const requiredPoints = ENTERING_KING_POINTS[color];
+    return { kingInZone, inCheck, zonePieces, points, requiredPoints,
+      canDeclare: this.turn === color && kingInZone && !inCheck && zonePieces >= ENTERING_KING_PIECES && points >= requiredPoints };
+  }
+
+  // 明示的に宣言した側だけを判定する。不成立での宣言は宣言側の負け。
+  declareEnteringKing(color: Color = this.turn): RuleEnding {
+    const loser = this.enteringKing(color).canDeclare ? (1 - color) : color;
+    return loser === 0 ? 'sente-loses' : 'gote-loses';
   }
 
   // 手数が上限に達した（呼ぶ側が引き分けにする）

@@ -256,7 +256,7 @@ describe('千日手', () => {
   });
 });
 
-describe('持将棋', () => {
+describe('入玉宣言（27点法）', () => {
   // 宣言法の条件（両玉が敵陣・手番側は王手されていない・玉以外の駒が敵陣に 10 枚以上）を
   // 両方が満たし、先手・後手ともちょうど 24 点の局面。先手番
   function enteredBoth(): Position {
@@ -279,77 +279,89 @@ describe('持将棋', () => {
     return pos;
   }
 
-  it('宣言の条件がそろい、両方 24 点以上なら引き分け', () => {
+  // 旧試験は双方入玉・24点で自動決着する前提だった。27点宣言法では宣言側だけを
+  // 判定し、状況照会では勝敗を付けない。王手・枚数不足・点数の境界の検査は残す。
+  it('先手28点で宣言勝ち。照会は局面や手数を変えない', () => {
     const pos = enteredBoth();
-    expect(pos.inCheck(0)).toBe(false);
-    expect(pos.inCheck(1)).toBe(false);
-    expect(pos.enteringKing()).toBe('draw');
-    pos.hands[0].FU = 3;
-    expect(pos.enteringKing()).toBe('draw');
+    pos.hands[0].FU = 4;
+    const before = pos.toSfen();
+    expect(pos.enteringKing()).toMatchObject({kingInZone:true, inCheck:false, points:28, requiredPoints:28, zonePieces:10, canDeclare:true});
+    expect(pos.declareEnteringKing()).toBe('gote-loses');
+    expect(pos.toSfen()).toBe(before);
+    expect(pos.moves).toHaveLength(0);
   });
 
-  it('片方が 24 点未満ならその側の負け（玉は数えない）', () => {
-    const pos = enteredBoth();
-    pos.hands[1].FU = 5; // 後手 23 点
-    expect(pos.enteringKing()).toBe('gote-loses');
-    pos.hands[1].FU = 6;
-    pos.hands[0].KY = 1; // 先手 23 点
-    expect(pos.enteringKing()).toBe('sente-loses');
+  it('先手27点は条件不足。負けの判定は宣言した場合だけ', () => {
+    const pos = enteredBoth(); pos.hands[0].FU = 3;
+    expect(pos.enteringKing()).toMatchObject({points:27, canDeclare:false});
+    expect(pos.declareEnteringKing()).toBe('sente-loses');
   });
 
-  it('手番側が王手されていたら判定しない（王手されている側は宣言できない）', () => {
-    const pos = enteredBoth();
-    pos.set(8, 0, { type: 'KY', color: 1 }); // １一香が１三の先手玉に王手
-    expect(pos.inCheck(0)).toBe(true);
-    expect(pos.enteringKing()).toBe('none');
-    // 手番が後手に移れば、後手は王手されていないので判定する
-    pos.turn = 1;
-    expect(pos.inCheck(1)).toBe(false);
-    expect(pos.enteringKing()).toBe('draw');
+  it('後手は27点で宣言勝ち、26点では宣言失敗', () => {
+    const pos = enteredBoth(); pos.turn = 1;
+    pos.hands[1].FU = 9;
+    expect(pos.enteringKing()).toMatchObject({points:27, requiredPoints:27, zonePieces:10, canDeclare:true});
+    expect(pos.declareEnteringKing()).toBe('sente-loses');
+    pos.hands[1].FU = 8;
+    expect(pos.enteringKing().canDeclare).toBe(false);
+    expect(pos.declareEnteringKing()).toBe('gote-loses');
   });
 
-  it('敵陣の駒が 9 枚なら判定しない（点数が足りなくても言わない）', () => {
-    const pos = enteredBoth();
-    pos.set(7, 0, null);
-    pos.set(7, 3, { type: 'GI', color: 0 }); // 銀を２四へ動かす（点数は 24 点のまま、敵陣は 9 枚）
-    expect(pos.enteringKing()).toBe('none');
-    pos.hands[1].FU = 0; // 後手が 18 点でも言わない
-    expect(pos.enteringKing()).toBe('none');
-    // 銀を敵陣へ戻せば 10 枚に戻る
-    pos.set(7, 3, null);
-    pos.set(7, 0, { type: 'GI', color: 0 });
-    expect(pos.enteringKing()).toBe('gote-loses');
+  it('宣言側が王手中は28点あっても宣言できない', () => {
+    const pos = enteredBoth(); pos.hands[0].FU = 4;
+    pos.set(8,0,{type:'KY',color:1});
+    expect(pos.enteringKing()).toMatchObject({inCheck:true, canDeclare:false});
+    expect(pos.declareEnteringKing()).toBe('sente-loses');
+    pos.turn = 1; pos.hands[1].FU = 9;
+    expect(pos.enteringKing().canDeclare).toBe(true); // 王手されていない後手自身は宣言可能
   });
 
-  it('後手の敵陣の駒が 9 枚でも判定しない', () => {
-    const pos = enteredBoth();
-    pos.set(4, 7, null);
-    pos.set(4, 5, { type: 'FU', color: 1 }); // ５六へ（敵陣の外）
-    expect(pos.enteringKing()).toBe('none');
+  it('敵陣の駒9枚では点数が足りても宣言できない。敵陣外の自駒は加点しない', () => {
+    const pos = enteredBoth(); pos.hands[0].FU = 5;
+    pos.set(7,0,null); pos.set(7,3,{type:'GI',color:0});
+    expect(pos.enteringKing()).toMatchObject({zonePieces:9, points:28, canDeclare:false});
+    pos.set(7,3,null); pos.set(7,0,{type:'GI',color:0});
+    expect(pos.enteringKing()).toMatchObject({zonePieces:10, points:29, canDeclare:true});
   });
 
-  it('片方の玉しか敵陣に入っていなければ判定しない', () => {
-    const pos = enteredBoth();
-    pos.set(8, 2, null);
-    pos.set(8, 3, { type: 'OU', color: 0 }); // １四玉（敵陣の一つ手前）
-    pos.hands[1].FU = 0; // 点数が足りなくても言わない
-    expect(pos.enteringKing()).toBe('none');
-    pos.set(8, 3, null);
-    pos.set(8, 2, { type: 'OU', color: 0 });
-    pos.set(0, 6, null);
-    pos.set(0, 5, { type: 'OU', color: 1 }); // ９六玉
-    expect(pos.enteringKing()).toBe('none');
-    expect(Position.initial().enteringKing()).toBe('none');
+  it('後手も敵陣の駒9枚なら宣言できない', () => {
+    const pos = enteredBoth(); pos.turn = 1; pos.hands[1].FU = 10;
+    pos.set(4,7,null); pos.set(4,5,{type:'FU',color:1});
+    expect(pos.enteringKing()).toMatchObject({zonePieces:9, points:27, canDeclare:false});
   });
 
-  it('玉が敵陣に入った瞬間には成立しない（駒が付いていっていないので対局は続く）', () => {
-    const pos = Position.initial();
-    pos.board.fill(null);
-    pos.set(8, 2, { type: 'OU', color: 0 }); // １三玉
-    pos.set(0, 6, { type: 'OU', color: 1 }); // ９七玉
-    pos.hands[0] = { FU: 0, KY: 0, KE: 0, GI: 0, KI: 4, KA: 2, HI: 2 }; // 24 点
-    pos.hands[1] = { FU: 9, KY: 0, KE: 0, GI: 0, KI: 0, KA: 0, HI: 3 }; // 24 点
-    expect(pos.enteringKing()).toBe('none');
+  it('自玉は敵陣内が必要だが、相手玉の入玉・相手の枚数や点数は不要', () => {
+    const pos = enteredBoth(); pos.hands[0].FU = 4;
+    pos.set(0,6,null); pos.set(0,5,{type:'OU',color:1});
+    pos.hands[1].FU = 0; pos.set(4,7,null);
+    expect(pos.enteringKing().canDeclare).toBe(true);
+    pos.set(8,2,null); pos.set(8,3,{type:'OU',color:0});
+    expect(pos.enteringKing()).toMatchObject({kingInZone:false, canDeclare:false});
+    expect(Position.initial().enteringKing().canDeclare).toBe(false);
+  });
+
+  it('持ち駒は点数に数えるが、敵陣の10枚には数えない。玉は0点', () => {
+    const pos = new Position();
+    pos.set(8,2,{type:'OU',color:0}); pos.set(0,6,{type:'OU',color:1});
+    pos.hands[0] = {FU:8, KY:0, KE:0, GI:0, KI:0, KA:2, HI:2};
+    expect(pos.enteringKing()).toMatchObject({points:28, zonePieces:0, canDeclare:false});
+  });
+
+  it('成駒も飛角は5点・小駒は1点で数え、敵陣外の飛車は数えない', () => {
+    const pos = enteredBoth(); pos.hands[0].FU = 4;
+    pos.set(6,1,{type:'RY',color:0}); pos.set(7,1,{type:'UM',color:0});
+    pos.set(4,0,{type:'NG',color:0});
+    expect(pos.enteringKing().points).toBe(28);
+    pos.set(6,1,null); pos.set(6,4,{type:'RY',color:0});
+    expect(pos.enteringKing()).toMatchObject({points:23, zonePieces:9, canDeclare:false});
+  });
+
+  it('相手の手番には宣言できず、玉が存在しない場合も成立しない', () => {
+    const pos = enteredBoth(); pos.hands[0].FU = 4; pos.turn = 1;
+    expect(pos.enteringKing(0).canDeclare).toBe(false);
+    expect(pos.declareEnteringKing(0)).toBe('sente-loses');
+    pos.turn = 0; pos.set(8,2,null);
+    expect(pos.enteringKing().canDeclare).toBe(false);
   });
 });
 
