@@ -50,7 +50,6 @@ export function renderSettings({ progress, selectedStyleId, onSelectStyle, onPro
       row.append(b);
     }
     levelBox.append(row);
-    levelBox.append(el('div', 'level-desc', levelById(progress.level).description));
     // 昇級までに何が要るか（師範代なら上は無い）。強さは今まで通り自由に選べる
     levelBox.append(el('div', 'level-next', promotionLine(progress) ?? '師範代が最高じゃ'));
   };
