@@ -78,6 +78,10 @@ it.each([
   ['末尾に値がない', ['--style']],
   ['値の位置が別の引数', ['--style', '--seed', '1']],
   ['全戦法と個別指定の併用', ['--all-styles', '--style', 'yagura']],
+  ['全戦法フラグの綴り違い', ['--all-style']],
+  ['戦法フラグの綴り違い', ['--styel', 'yagura']],
+  ['未対応の値付きフラグ', ['--all-styles=false']],
+  ['戦法の重複指定', ['--style', 'yagura', '--style', 'bogus']],
 ] as const)('無効な戦法指定（%s）を、エンジン起動とログ上書きより先に拒否する', async (_name, flags) => {
   vi.resetModules();
   vi.clearAllMocks();
@@ -97,6 +101,44 @@ it.each([
     expect(readFileSync(out, 'utf8')).toBe('keep existing evidence\n');
     const message = error.mock.calls.flat().join(' ');
     for (const id of ['yagura', 'shikenbisha', 'kakugawari', 'bougin', 'nakabisha']) expect(message).toContain(id);
+    if (flags[0] === '--all-style' || flags[0] === '--styel' || flags[0] === '--all-styles=false') {
+      expect(message).toContain(`Unknown option: ${flags[0]}`);
+      expect(message).toContain('--all-styles');
+    }
+    if (_name === '全戦法と個別指定の併用') {
+      expect(message).toContain('Cannot combine --all-styles and --style');
+      expect(message).not.toContain('Invalid --style: yagura');
+    }
+  } finally {
+    process.argv = argv;
+    vi.restoreAllMocks();
+    unlinkSync(out);
+    rmdirSync(dir);
+  }
+});
+
+it.each([
+  ['ゲーム数が数値でない', ['--games', 'abc'], 'Invalid value for --games: abc'],
+  ['手数上限が数値でない', ['--plies', 'abc'], 'Invalid value for --plies: abc'],
+  ['思考時間が数値でない', ['--judgeMs', 'NaN'], 'Invalid value for --judgeMs: NaN'],
+])('無効な値指定（%s）を、エンジン起動とログ上書きより先に拒否する', async (_name, flags, messagePrefix) => {
+  vi.resetModules();
+  vi.clearAllMocks();
+  const dir = mkdtempSync(join(tmpdir(), 'ojiji-selfplay-'));
+  const out = join(dir, 'existing.jsonl');
+  writeFileSync(out, 'keep existing evidence\n');
+  const argv = process.argv;
+  process.argv = ['node', 'selfplay.ts', '--style', 'yagura', ...flags, '--out', out];
+  const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    await import('./selfplay');
+    await vi.waitFor(() => expect(exit).toHaveBeenCalled());
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(lifecycle.init).not.toHaveBeenCalled();
+    expect(readFileSync(out, 'utf8')).toBe('keep existing evidence\n');
+    expect(error.mock.calls.flat().join(' ')).toContain(messagePrefix);
   } finally {
     process.argv = argv;
     vi.restoreAllMocks();

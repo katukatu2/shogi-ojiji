@@ -52,11 +52,27 @@ function arg(name: string, def: string): string {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
 }
 
-const GAMES = Number(arg('games', '10'));
-const SEED = Number(arg('seed', '1'));
+const numberProblems: string[] = [];
+
+function parseInteger(name: string, defaultValue: number, min: number): number {
+  const raw = arg(name, String(defaultValue));
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    numberProblems.push(`Invalid value for --${name}: ${raw}. Must be an integer >= ${min}.`);
+    return value;
+  }
+  if (value < min) {
+    numberProblems.push(`Invalid value for --${name}: ${raw}. Must be at least ${min}.`);
+  }
+  return value;
+}
+
+const GAMES = parseInteger('games', 10, 1);
+const SEED = parseInteger('seed', 1, 0);
 const OUT = arg('out', 'logs/selfplay.jsonl');
-const MAX_PLIES = Number(arg('plies', '120'));
-const JUDGE_MS = Number(arg('judgeMs', '80'));
+const MAX_PLIES = parseInteger('plies', 120, 0);
+const JUDGE_MS = parseInteger('judgeMs', 80, 1);
+const START = parseInteger('start', 0, 0);
 const log = (o: Record<string, unknown>) => appendFileSync(OUT, JSON.stringify(o) + '\n');
 
 async function playerMove(pos: Position, engine: Engine, opening: Opening, random: () => number, ply: number): Promise<Move> {
@@ -164,12 +180,24 @@ async function playGame(id: number, engine: Engine, random: () => number, style:
 }
 
 (async () => {
+  const options = ['--style', '--all-styles', '--games', '--plies', '--judgeMs', '--seed', '--start', '--out'];
+  // vite-node/npmが残す区切りの「--」はフラグ名として検査しない。
+  const flags = process.argv.slice(2).filter((value) => value.startsWith('--') && value !== '--');
+  const unknown = flags.find((flag) => !options.includes(flag));
+  const duplicate = flags.find((flag, index) => flags.indexOf(flag) !== index);
   const allStyles = process.argv.includes('--all-styles');
   const styleIndex = process.argv.indexOf('--style');
   const styleId = styleIndex < 0 ? 'yagura' : process.argv[styleIndex + 1];
   const style = styleId ? findStyle(styleId) : undefined;
-  if (!style || (allStyles && styleIndex >= 0)) {
-    console.error(`Invalid --style: ${styleId ?? '(missing)'}. Choose one of: ${STYLES.map((s) => s.id).join(', ')}; or use --all-styles alone.`);
+  const problem = unknown ? `Unknown option: ${unknown}.`
+    : duplicate ? `Option specified more than once: ${duplicate}.`
+    : allStyles && styleIndex >= 0 ? 'Cannot combine --all-styles and --style.'
+    : numberProblems.length > 0 ? numberProblems[0]
+    : !style ? `Invalid --style: ${styleId ?? '(missing)'}.`
+    : undefined;
+  if (problem) {
+    console.error(problem);
+    console.error(`Options: ${options.join(', ')}. Styles: ${STYLES.map((s) => s.id).join(', ')}.`);
     process.exit(1);
     return;
   }
@@ -181,8 +209,8 @@ async function playGame(id: number, engine: Engine, random: () => number, style:
     const factory = require('@mizarjp/yaneuraou.k-p') as EngineFactory;
     engine = new Engine(factory, 1);
     await engine.init();
-    const start = Number(arg('start', '0'));
-    for (const selected of allStyles ? STYLES : [style]) {
+    const start = START;
+    for (const selected of allStyles ? STYLES : [style!]) {
       const random = rng(SEED);
       for (let i = start; i < start + GAMES; i++) {
         try {
