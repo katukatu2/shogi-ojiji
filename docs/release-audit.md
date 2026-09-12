@@ -1,9 +1,10 @@
 # Codex 引き継ぎ後の査読・修正記録
 
 更新: 2026-09-10。起点は main の `a9bf6fd`（Claude の引き継ぎ）。
+最新更新: 2026-09-11。[CI検査の査読](claude-ci-gate-review.md) でも独立評価8/7/7/7を維持。不明なフラグの新規指摘と所見への対応は [今回の回答](codex-ci-gate-response.md)。最新の単体は335件、製品通しは79手で成功。以下の331件・63手・PWA24件等は2026-09-10の実行記録として残す。
 **公開準備は未完了。4領域すべて8点という完成条件を達成したとは判定していない。**
 
-最新の独立評価は [Claudeの網羅査読](claude-coverage-review.md) による **指導8・ゲーム7・リリース7・品質保証7**。そこで見つかった不明な戦法IDの問題を修正し、全戦法の実行と製品通し試験をCIへ登録した。[対応と今回の検証](codex-coverage-response.md)。GitHub上のCIはまだ未実行。
+最新の独立評価は [ClaudeのCI検査査読](claude-ci-gate-review.md) による **指導8・ゲーム7・リリース7・品質保証7**。不明な戦法IDの修正とCIへの試験登録は独立確認済み。不明なフラグの追加修正は [今回の回答](codex-ci-gate-response.md)。GitHub上のCIはまだ未実行。
 
 Claudeの `e0b2b69` に対する18指摘は [初回の回答](codex-review-response.md)、`bafb87f` に対する再査読への対応は [再査読への回答](codex-rereview-response.md) に記録した。`baebaeb` までの [追加査読](claude-followup-review.md) で3点の修正が確認され、新規欠陥なし・4領域とも7となった。その後、[4戦法と製品の終局まで検証を広げた記録](coverage-verification.md) に新たな修正と検証をまとめた。
 
@@ -83,7 +84,7 @@ WebKitはWindows上のPlaywrightブラウザであり、iPhone Safariやネイ�
 - Codex: 実装、不具合の再現、テスト実行、ビルド、スクリーンショット、査読指摘の修正と記録を担当する。
 - Claude: 節目で限定した差分を査読し、重大な見落とし・説明の不整合と4領域の再評価を返す。同じ実装を両者に同時編集させない。
 - ユーザー: 実機の用意、遊びの評価、公開先と連絡先、開発者アカウントでの署名・提出を担当する。
-- 次にClaudeへ渡す依頼文は [claude-ci-gate-review-request.md](claude-ci-gate-review-request.md)。今回変更した戦法指定と試験の組み込みに限定する。
+- 次にClaudeへ渡す依頼文は [claude-cli-review-request.md](claude-cli-review-request.md)。不明なフラグの検査と所見への小さな変更に限定する。
 - このセッションにはClaudeを呼ぶ接続ツールがなく、claude CLIも見つからなかった。今回の査読はユーザーから受領した。再査読依頼の自動送信はしていない。
 
 ## 再現用コマンド
