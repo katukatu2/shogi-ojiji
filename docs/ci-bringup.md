@@ -30,6 +30,10 @@
 
 GitHub CLI 設定フォルダーへの追加書き込み許可を申請したが、返された許可にはネットワークと対象 `.git` だけが含まれ、設定フォルダーは含まれなかった。理由の詳細は返されていない。設定フォルダーの ACL を変更せず、ユーザー自身の通常の PowerShell で上記ログインを完了してもらう段階。リポジトリ作成・push はまだ行っていない。
 
+その後、ユーザーの PowerShell で `Authentication complete`、`Logged in as katukatu2` が表示され、ログインは完了した。しかし Codex の実行アカウントは `Katu\CodexSandboxOnline` で、ネットワーク許可後も `gh api user` は HTTP 401 だった。認証を上書きする `GH_TOKEN` / `GITHUB_TOKEN` 等の環境変数は存在しない。GitHub CLI の `hosts.yml` は更新済みで対象アカウントを含むが、インラインの `oauth_token` は含まない（値は表示していない）。CLI のヘルプにある既定の Windows 資格情報ストアへの保存と整合し、ユーザー側の認証を別アカウントの実行環境から利用できない状態と判断した。
+
+[OpenAI の Windows sandbox の説明](https://learn.chatgpt.com/docs/windows/windows-sandbox)にも、専用の権限を制限した Windows ユーザーで実行する仕組みが記載されている。サンドボックスの弱体化、資格情報の平文への書き出し、トークンのチャットへの貼り付けは行わない。認証済みのユーザー側 PowerShell で実行する `Start-ShogiCI.ps1` をタスクの outputs に用意した。アカウント、非公開設定、origin、main とコミットを検査したうえで push し、同一コミットの CI を順に 3 回実行し、run 情報・ステップ時間・ログ・artifact を `logs/ci-bringup/<日時>/<run ID>/` に取得する。失敗時は証拠を保存して止まり、次の回を成功扱いで進めない。まだこのスクリプトの GitHub 操作は実行していない。
+
 ### act の実施可否
 
 `act` と `docker` は PATH に存在せず、標準インストール先に Docker Desktop もなかった。`wsl --list --quiet` は WSL が未インストールと報告した。現在の環境では `act` を実行できない。Docker/WSL の導入は Windows の環境変更が必要になり得るため、無断導入していない。
@@ -70,7 +74,7 @@ GitHub CLI 設定フォルダーへの追加書き込み許可を申請したが
 
 | 回 | run URL | main のコミット | 結果 | 所要時間・各ステップ時間 | artifact |
 |---|---|---|---|---|---|
-| — | 未実行 | — | 認証待ち | 未計測 | 未生成 |
+| — | 未実行 | — | 認証済みユーザー側 PowerShell での起動待ち | 未計測 | 未生成 |
 
 GitHub で実行後、失敗した run も省略せず記録する。成功 run では、製品通しの `result.json` の `endedByMate: true`・手数・棋譜と `mate.png` / `result.png`、自動対局の全 5 戦法各 2 局・error 行 0、操作 44 件と PWA 24 件の実行結果を artifact から確認する。自動対局は現在の `--all-styles --games 2 --plies 60` で所要時間を計測する。
 
@@ -80,7 +84,7 @@ GitHub で実行後、失敗した run も省略せず記録する。成功 run 
 
 ## 未完了
 
-- GitHub 再認証、非公開リポジトリ作成、main の push。
+- 認証済みのユーザー側 PowerShell からの非公開リポジトリ作成、main の push。ユーザー側の再認証自体は完了。
 - GitHub Actions の実行、失敗原因の修正、同じ最終コードで連続 3 回成功。
 - 各 run の URL、ジョブと各ステップの所要時間、artifact の一覧と中身の取得・確認。
 - 毎回の製品通し試験が詰みまで完走することの GitHub 上の証拠。
