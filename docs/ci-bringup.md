@@ -34,6 +34,16 @@ GitHub CLI 設定フォルダーへの追加書き込み許可を申請したが
 
 [OpenAI の Windows sandbox の説明](https://learn.chatgpt.com/docs/windows/windows-sandbox)にも、専用の権限を制限した Windows ユーザーで実行する仕組みが記載されている。サンドボックスの弱体化、資格情報の平文への書き出し、トークンのチャットへの貼り付けは行わない。認証済みのユーザー側 PowerShell で実行する `Start-ShogiCI.ps1` をタスクの outputs に用意した。アカウント、非公開設定、origin、main とコミットを検査したうえで push し、同一コミットの CI を順に 3 回実行し、run 情報・ステップ時間・ログ・artifact を `logs/ci-bringup/<日時>/<run ID>/` に取得する。失敗時は証拠を保存して止まり、次の回を成功扱いで進めない。まだこのスクリプトの GitHub 操作は実行していない。
 
+### ユーザー側スクリプトの初回実行と修正
+
+その後の初回実行で、非公開リポジトリ `katukatu2/shogi-ojiji` の作成とローカル `origin` の登録まで完了した。続く push 前の CI 履歴取得で、`workflowName` プロパティがないというエラーで停止した。GitHub Actions 内の失敗ではなく、こちらが用意した起動スクリプトの不具合である。この実行では push・CI 起動に到達していない。
+
+原因は Windows PowerShell 5.1 の `ConvertFrom-Json` とパイプラインの配列の扱い。新規リポジトリの履歴 `[]` を直接 `Where-Object` へ流すと、配列自体に `workflowName` を求め、StrictMode により失敗する。JSON を変数へ受け、明示的な `foreach` で各 run を列挙するよう修正した。空の履歴は 0 件として扱い、StrictMode や失敗検出は維持した。
+
+Windows PowerShell 5.1 で修正前の処理を戻した模擬実行は、初回の空履歴で同じ `workflowName` エラーになった。修正後は PowerShell 5.1 と 7 の両方で、(1) 新規・空履歴から 3 回成功、(2) 作成済み・空履歴のリポジトリを再作成せず再開、(3) CI 失敗時にログ・artifact を保存して次の run を起動せず停止、(4) 公開リポジトリを push 前に拒否、の 4 ケースすべてを確認した。GitHub/Git の操作は模擬応答であり、これらは実際の CI 成功回数に数えない。
+
+修正版を同じ `outputs/Start-ShogiCI.ps1` に保存した。作成済みの非公開リポジトリと origin をそのまま検査して再利用できる。ユーザー側での再実行待ち。
+
 ### act の実施可否
 
 `act` と `docker` は PATH に存在せず、標準インストール先に Docker Desktop もなかった。`wsl --list --quiet` は WSL が未インストールと報告した。現在の環境では `act` を実行できない。Docker/WSL の導入は Windows の環境変更が必要になり得るため、無断導入していない。
@@ -74,7 +84,7 @@ GitHub CLI 設定フォルダーへの追加書き込み許可を申請したが
 
 | 回 | run URL | main のコミット | 結果 | 所要時間・各ステップ時間 | artifact |
 |---|---|---|---|---|---|
-| — | 未実行 | — | 認証済みユーザー側 PowerShell での起動待ち | 未計測 | 未生成 |
+| — | 未実行 | — | 起動スクリプトの空履歴処理を修正、ユーザー側で再実行待ち | 未計測 | 未生成 |
 
 GitHub で実行後、失敗した run も省略せず記録する。成功 run では、製品通しの `result.json` の `endedByMate: true`・手数・棋譜と `mate.png` / `result.png`、自動対局の全 5 戦法各 2 局・error 行 0、操作 44 件と PWA 24 件の実行結果を artifact から確認する。自動対局は現在の `--all-styles --games 2 --plies 60` で所要時間を計測する。
 
@@ -84,7 +94,7 @@ GitHub で実行後、失敗した run も省略せず記録する。成功 run 
 
 ## 未完了
 
-- 認証済みのユーザー側 PowerShell からの非公開リポジトリ作成、main の push。ユーザー側の再認証自体は完了。
+- 修正版スクリプトによる main の push。ユーザー側の認証、非公開リポジトリ作成、origin 登録は完了。
 - GitHub Actions の実行、失敗原因の修正、同じ最終コードで連続 3 回成功。
 - 各 run の URL、ジョブと各ステップの所要時間、artifact の一覧と中身の取得・確認。
 - 毎回の製品通し試験が詰みまで完走することの GitHub 上の証拠。
