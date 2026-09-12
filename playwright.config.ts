@@ -20,11 +20,13 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['html', { outputFolder: 'logs/e2e/report', open: 'never' }],
+    ['json', { outputFile: 'logs/e2e/results.json' }],
   ],
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 375, height: 667 },
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
     screenshot: 'only-on-failure',
     // dev サーバーが COOP/COEP を付けるので、coi-serviceworker.js の出番はない。
     // 試験ごとの状態を単純にするため Service Worker は止めておく

@@ -10,7 +10,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
-  reporter: [['list'], ['html', { outputFolder: 'logs/fullgame/report', open: 'never' }]],
+  reporter: [['list'], ['html', { outputFolder: 'logs/fullgame/report', open: 'never' }], ['json', { outputFile: 'logs/fullgame/results.json' }]],
   use: {
     browserName: 'chromium',
     baseURL: 'http://127.0.0.1:5182',

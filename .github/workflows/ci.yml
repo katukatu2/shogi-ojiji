@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -31,33 +34,38 @@ jobs:
         timeout-minutes: 25
         run: npm run e2e:fullgame
       - uses: actions/upload-artifact@v4
-        if: ${{ always() && steps.fullgame.outcome != 'skipped' }}
+        if: ${{ always() && steps.fullgame.outcome != 'skipped' && steps.fullgame.outcome != '' }}
         with:
           name: product-fullgame
           path: logs/fullgame
+          if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
-        if: ${{ failure() && steps.e2e.outcome == 'failure' }}
+        if: ${{ always() && steps.e2e.outcome != 'skipped' && steps.e2e.outcome != '' }}
         with:
           name: playwright-report
-          path: logs/e2e/report
+          path: logs/e2e
+          if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
-        if: ${{ failure() && steps.pwa.outcome == 'failure' }}
+        if: ${{ always() && steps.pwa.outcome != 'skipped' && steps.pwa.outcome != '' }}
         with:
           name: pwa-report
-          path: logs/pwa/report
+          path: logs/pwa
+          if-no-files-found: error
           retention-days: 7
       # 台詞の点検: 各戦法 2 局ずつ自動対局してエラーが出ないことだけ確かめる
       - id: selfplay
         run: npm run selfplay -- --all-styles --games 2 --plies 60 --out logs/ci-all-styles.jsonl
       - uses: actions/upload-artifact@v4
-        if: ${{ always() && steps.selfplay.outcome != 'skipped' }}
+        if: ${{ always() && steps.selfplay.outcome != 'skipped' && steps.selfplay.outcome != '' }}
         with:
           name: selfplay-logs
           path: logs/ci-*.jsonl
+          if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist
+          if-no-files-found: error
