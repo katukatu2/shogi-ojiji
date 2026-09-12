@@ -26,7 +26,9 @@
 
 ユーザーは **案 A: 非公開リポジトリ**、アカウント **katukatu2**、名前 **shogi-ojiji** を選択した。公開先 URL と連絡先は未決定のまま維持する。
 
-ネットワーク許可後も `gh auth status` は既存の認証情報を invalid と報告した。`gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key` で再認証を開始し、ユーザーによるブラウザ認証待ち。リポジトリ作成・push はまだ行っていない。
+ネットワーク許可後も `gh auth status` は既存の認証情報を invalid と報告した。`gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key` で再認証を開始した。最初のコードは期限切れ。再発行したコードではユーザーの操作により GitHub 側の認証に成功したが、CLI が `C:\Users\sonot\AppData\Roaming\GitHub CLI\hosts.yml` に認証情報を保存する段階で Access denied となり終了コード 1。認証情報は利用可能な状態で保存されず、その後の `gh auth status` も invalid のままだった。
+
+GitHub CLI 設定フォルダーへの追加書き込み許可を申請したが、返された許可にはネットワークと対象 `.git` だけが含まれ、設定フォルダーは含まれなかった。理由の詳細は返されていない。設定フォルダーの ACL を変更せず、ユーザー自身の通常の PowerShell で上記ログインを完了してもらう段階。リポジトリ作成・push はまだ行っていない。
 
 ### act の実施可否
 
