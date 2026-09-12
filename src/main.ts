@@ -269,7 +269,6 @@ function showStartBanner(style: Style): void {
   band.append(el('div', 'sub', `対 ${style.name}・${levelById(progress.level).name}`));
   banner.append(band);
   app.append(banner);
-  playPiece();
   startBannerTimer = window.setTimeout(() => banner.remove(), 1700);
 }
 
