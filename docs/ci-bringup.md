@@ -1,5 +1,9 @@
 # GitHub Actions 立ち上げ記録
 
+追記（2026-09-12、プレイ感想対応時）: [独立査読](claude-ci-bringup-review.md)により、CIの完了条件の照合と品質保証8への評価変更を受領した。以下の立ち上げ当時の記録は経過として残す。
+
+報告書のみを追記した `0679c1f2f5a728b4e170d68c9bac839938faf0bc` へのpushで起動した [CI #4（34677440250）](https://github.com/katukatu2/shogi-ojiji/actions/runs/34677440250) も、GitHub画面でSuccessを確認した。2026-09-12 15:10（日本時間）起動、全体7分38秒、checkジョブ7分34秒。成果物はdist・playwright-report・product-fullgame・pwa-report・selfplay-logsの5個。4回目の成果物内部は再照合していない。同一コードを検証した下記3回とは区別し、その後のプレイ感想による改善コードのCI成功には数えない。改善内容と追加検証は [playtest-feedback-response.md](playtest-feedback-response.md) に記録する。
+
 更新: 2026-09-12。作業指示: [codex-ci-bringup-instructions.md](codex-ci-bringup-instructions.md)。
 
 **GitHub Actions は同じ main のコミットで連続 3 回成功した。3 回分の成果物も取得して確認済み。独立査読による評価は未実施であり、品質保証を自己評価で 8 に変更しない。**
