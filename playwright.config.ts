@@ -15,7 +15,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: 1,
+  retries: process.env.CI ? 0 : 1, // CIは最初の失敗をそのままゲートに反映する
   workers: process.env.CI ? 1 : 2, // エンジンが WASM のスレッドを使うので、並列は控えめに
   reporter: [
     ['list'],
