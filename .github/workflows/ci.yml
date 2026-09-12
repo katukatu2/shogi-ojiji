@@ -27,7 +27,8 @@ jobs:
       - id: pwa
         run: npm run e2e:pwa
       - id: fullgame
-        timeout-minutes: 20
+        # Playwrightの全体上限20分に、レポートと終了処理の猶予を加える。
+        timeout-minutes: 25
         run: npm run e2e:fullgame
       - uses: actions/upload-artifact@v4
         if: ${{ always() && steps.fullgame.outcome != 'skipped' }}

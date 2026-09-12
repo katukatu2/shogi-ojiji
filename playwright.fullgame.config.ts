@@ -13,7 +13,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { outputFolder: 'logs/fullgame/report', open: 'never' }]],
   use: {
     browserName: 'chromium',
-    baseURL: 'http://localhost:5182',
+    baseURL: 'http://127.0.0.1:5182',
     viewport: { width: 390, height: 844 },
     serviceWorkers: 'allow',
     screenshot: 'only-on-failure',
