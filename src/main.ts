@@ -196,7 +196,7 @@ function showTitle(): void {
 
 // ===== 対局設定 =====
 // 強さと戦法を選ぶ。前回の戦法が選択済みで開き、そのまま「この設定で対局」で始められる。
-// 選んだ戦法の囲いの形・成績・次の課題を見せて、選ぶ理由を作る
+// 戦法の一覧と、選んだ戦法の次の課題・皆伝条件を見せる
 let pendingStyleId: string | null = null;
 
 function showSettings(): void {

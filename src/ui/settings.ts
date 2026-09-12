@@ -1,11 +1,9 @@
 import { el } from './dom';
-import { miniBoard } from './miniboard';
-import { formationOf } from '../game/formation';
 import { type Style } from '../style/types';
 import { STYLES as ALL_STYLES, findStyle } from '../style';
 import {
   type Progress, LEVELS, levelById, doneTaskSet, pickTask, badgesOf,
-  BADGE_IDS, BADGE_LABEL, BADGE_CONDITION, promotionLine, KAIDEN_CONDITION,
+  BADGE_LABEL, promotionLine, KAIDEN_CONDITION,
 } from '../game/progress';
 
 const STYLES: { style: Style | null; name: string; desc: string }[] = ALL_STYLES.map((s) => ({
@@ -83,33 +81,23 @@ export function renderSettings({ progress, selectedStyleId, onSelectStyle, onPro
       for (const [id, r] of rows) r.classList.toggle('on', id === style.id);
       renderPreview();
       renderFoot();
-      preview.scrollIntoView({ block: 'nearest' }); // 囲いと課題が見える位置まで
     });
     rows.set(style.id, b);
     list.append(b);
   }
   s.append(list);
 
-  // 選んだ戦法の囲い・成績・次の課題
+  // 一覧と重複しない、次の課題・皆伝の条件だけを小さくまとめる
   const preview = el('div', 'preview');
   const renderPreview = (): void => {
     const style = selected();
     preview.innerHTML = '';
-    preview.append(miniBoard(formationOf(style)));
-    const text = el('div', 'ptext');
-    text.append(el('b', '', `${style.name}の駒組み`));
-    text.append(el('div', '', style.plans[0]?.name ? `まずは${style.plans[0].name}。対局ごとに形を変えてくる。` : ''));
     const rec = progress.styles[style.id];
-    text.append(el('div', 'pline', rec && rec.games > 0 ? `成績: ${rec.wins}勝 ${rec.games}局・ばかもん ${rec.scolded}回` : '成績: まだ指していない'));
     // 課題は対局数を種にして選ぶ（startGame と同じ計算。ここで見せた課題がそのまま対局に出る）
-    text.append(el('div', 'pline', `次の課題: ${pickTask(style, done, rec?.games ?? 0).text}`));
-    // 次に取れる免状の条件（全部取っていれば出さない）
+    preview.append(el('div', '', `次の課題: ${pickTask(style, done, rec?.games ?? 0).text}`));
     const have = badgesOf(progress, style.id);
-    const nextBadge = BADGE_IDS.find((id) => !have.includes(id) && id !== 'kaiden');
-    if (nextBadge) text.append(el('div', 'pline', `次の免状: ${BADGE_CONDITION[nextBadge]}`));
     // 皆伝は最後の目標なので、初勝利や叱られず勝利を取る前からずっと見せておく
-    if (!have.includes('kaiden')) text.append(el('div', 'pline', `皆伝: ${KAIDEN_CONDITION}`));
-    preview.append(text);
+    if (!have.includes('kaiden')) preview.append(el('div', '', `皆伝: ${KAIDEN_CONDITION}`));
   };
   s.append(preview);
 

@@ -25,7 +25,12 @@ test.describe('画面の動線', () => {
     await page.getByRole('button', { name: /^棒銀/ }).click();
     await page.getByRole('button', { name: '見習い', exact: true }).click();
     await expect(go).toContainText('棒銀・見習い');
-    await expect(page.getByText('棒銀の駒組み')).toBeVisible();
+    // 駒組みプレビューは廃止。課題と皆伝条件、昇級条件は引き続き見せる。
+    await expect(page.locator('.settings-screen .mini-board')).toHaveCount(0);
+    await expect(page.locator('.level-desc')).toHaveCount(0);
+    await expect(page.getByText(/^昇級まで:/)).toBeVisible();
+    await expect(page.getByText(/^次の課題:/)).toBeVisible();
+    await expect(page.getByText(/^皆伝:/)).toBeVisible();
 
     await go.click();
 
@@ -88,7 +93,7 @@ test.describe('画面の動線', () => {
     // 既定は最初の戦法（矢倉）と見習い
     const go = page.getByRole('button', { name: 'この設定で対局' });
     await expect(go).toContainText('矢倉・見習い');
-    await expect(page.getByText('成績: まだ指していない')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^矢倉/ })).toContainText('未対局');
 
     // 設定からタイトルへ戻れる
     await page.getByRole('button', { name: 'タイトル' }).click();
