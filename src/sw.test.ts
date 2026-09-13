@@ -17,11 +17,13 @@ function server(version = 'one') {
   return { resources, manifest };
 }
 
-function worker(version = 'one', network = server(version), stores: Stores = new Map(), active = false) {
+function worker(version = 'one', network = server(version), stores: Stores = new Map(), active = false, development = false) {
   const handlers: Record<string, (event: any) => void> = {};
   const fetched: string[] = [], warnings: unknown[][] = [], messages: any[] = [];
+  const lifecycle: string[] = [], cacheCalls: string[] = [];
   let offline = false, quota = false;
   const cacheApi = (name: string) => {
+    cacheCalls.push('open:' + name);
     if (!stores.has(name)) stores.set(name, new Map());
     const entries = stores.get(name)!;
     const find = (req: Request | string | URL, options?: { ignoreSearch?: boolean }) => {
@@ -31,6 +33,7 @@ function worker(version = 'one', network = server(version), stores: Stores = new
     return {
       match: async (req: Request | string | URL, options?: { ignoreSearch?: boolean }) => entries.get(find(req, options) ?? '')?.clone(),
       put: async (req: Request | string | URL, res: Response) => {
+        cacheCalls.push('put:' + name);
         if (quota) throw new Error('QuotaExceededError');
         entries.set(urlOf(req), res.clone());
       },
@@ -42,7 +45,8 @@ function worker(version = 'one', network = server(version), stores: Stores = new
   const self = {
     location: { origin: ORIGIN }, registration: { scope, active: active ? {} : null },
     addEventListener: (name: string, handler: (e: any) => void) => { handlers[name] = handler; },
-    clients: { claim: async () => undefined, matchAll: async () => [{ postMessage: (msg: any) => messages.push(msg) }] },
+    skipWaiting: async () => { lifecycle.push('skipWaiting'); },
+    clients: { claim: async () => { lifecycle.push('claim'); }, matchAll: async () => [{ postMessage: (msg: any) => messages.push(msg) }] },
   };
   const fetch = async (req: Request | URL | string) => {
     const url = urlOf(req); fetched.push(url);
@@ -50,7 +54,8 @@ function worker(version = 'one', network = server(version), stores: Stores = new
     const body = network.resources.get(url);
     return new Response(body ?? 'missing', { status: body === undefined ? 404 : 200 });
   };
-  const source = readFileSync('public/coi-serviceworker.js', 'utf8').replace("const VERSION = 'development';", "const VERSION = '" + version + "';");
+  const raw = readFileSync('public/coi-serviceworker.js', 'utf8');
+  const source = development ? raw : raw.replace("const VERSION = 'development';", "const VERSION = '" + version + "';");
   new Function('self', 'caches', 'fetch', 'Response', 'Headers', 'URL', 'Request', 'crypto', 'console', source)(
     self, caches, fetch, Response, Headers, URL, Request, webcrypto, { warn: (...args: unknown[]) => warnings.push(args) },
   );
@@ -66,10 +71,81 @@ function worker(version = 'one', network = server(version), stores: Stores = new
     handlers.fetch({ request: req, respondWith: (p: Promise<Response>) => { response = p; } });
     return response ? await response : null;
   };
-  return { stores, network, fetched, warnings, messages, event, request, setOffline: (b: boolean) => { offline = b; }, setQuota: (b: boolean) => { quota = b; } };
+  return { stores, network, fetched, warnings, messages, lifecycle, cacheCalls, event, request, setOffline: (b: boolean) => { offline = b; }, setQuota: (b: boolean) => { quota = b; } };
 }
 
+describe('開発時Service Worker（VERSIONを差し替えない）', () => {
+  it('登録から通信・再試行までキャッシュを開かず保存せず、最新の応答にヘッダーを付ける', async () => {
+    const w = worker('one', server(), new Map(), false, true);
+    await w.event('install'); await w.event('activate');
+    expect(w.lifecycle).toEqual(['skipWaiting', 'claim']);
+    for (const body of ['first source', 'updated source']) {
+      w.network.resources.set(scope + 'src/main.ts', body);
+      const res = await w.request('./src/main.ts');
+      expect(await res?.text()).toBe(body);
+      expect(res?.headers.get('cross-origin-opener-policy')).toBe('same-origin');
+      expect(res?.headers.get('cross-origin-embedder-policy')).toBe('require-corp');
+    }
+    await w.event('message', { type: 'ojiji-offline-status' });
+    await w.event('message', { type: 'ojiji-offline-retry' });
+    expect(w.cacheCalls).toEqual([]);
+    expect([...w.stores.keys()]).toEqual([]);
+    expect(w.fetched).toEqual([scope + 'src/main.ts', scope + 'src/main.ts']);
+  });
+
+  it('通信失敗時に保存済みの古いソースを返さずエラーになる', async () => {
+    const stores: Stores = new Map([
+      ['ojiji:/sub/:development', new Map([[scope + 'src/main.ts', new Response('old main.ts')]])],
+    ]);
+    const w = worker('one', server(), stores, true, true);
+    w.setOffline(true);
+    await expect(w.request('./src/main.ts').then((res) => res?.text())).rejects.toThrow('offline');
+    expect(w.cacheCalls).toEqual([]);
+  });
+
+  it('有効化で自スコープの開発キャッシュだけを消し、既存タブを制御する', async () => {
+    const stores: Stores = new Map([
+      ['ojiji:/sub/:development', new Map([[scope, new Response('old HTML')]])],
+      ['ojiji:/sub/:one', new Map([[scope, new Response('release')]])],
+      ['ojiji:/sub/:meta', new Map([[scope + '.ojiji-active', new Response('ojiji:/sub/:one')]])],
+      ['ojiji:/another/:development', new Map()],
+      ['other-app', new Map()],
+    ]);
+    const w = worker('one', server(), stores, true, true);
+    await w.event('install'); await w.event('activate');
+    expect(w.lifecycle).toEqual(['skipWaiting', 'claim']);
+    expect([...stores.keys()]).toEqual(['ojiji:/sub/:one', 'ojiji:/sub/:meta', 'ojiji:/another/:development', 'other-app']);
+    expect(await stores.get('ojiji:/sub/:one')?.get(scope)?.text()).toBe('release');
+    expect(await stores.get('ojiji:/sub/:meta')?.get(scope + '.ojiji-active')?.text()).toBe('ojiji:/sub/:one');
+    expect(w.cacheCalls).toEqual([]);
+  });
+
+  it('保存済みHTMLがあってもナビゲーションの通信失敗を隠さず、404もそのまま返す', async () => {
+    const stores: Stores = new Map([
+      ['ojiji:/sub/:development', new Map([[scope, new Response('old HTML')]])],
+    ]);
+    const w = worker('one', server(), stores, true, true);
+    w.setOffline(true);
+    await expect(w.request('./', undefined, true)).rejects.toThrow('offline');
+    w.setOffline(false);
+    w.network.resources.delete(scope);
+    const res = await w.request('./', undefined, true);
+    expect(res?.status).toBe(404);
+    expect(await res?.text()).toBe('missing');
+    expect(res?.headers.get('cross-origin-embedder-policy')).toBe('require-corp');
+    expect(w.cacheCalls).toEqual([]);
+  });
+});
+
 describe('出荷時Service Worker', () => {
+  it('製品の初回・更新では待機を飛ばさない', async () => {
+    const old = worker(); await old.event('install'); await old.event('activate');
+    const next = worker('two', server('two'), old.stores, true);
+    await next.event('install');
+    expect(old.lifecycle).toEqual(['claim']);
+    expect(next.lifecycle).toEqual([]);
+  });
+
   it('完全保存したHTML/JSをオンラインでも同じ版で返し、オフライン起動に使う', async () => {
     const w = worker();
     await w.event('install'); await w.event('activate');

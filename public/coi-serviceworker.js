@@ -104,7 +104,11 @@ if (typeof window === 'undefined') {
     return filling;
   };
   self.addEventListener('install', (event) => {
-    if (VERSION === 'development') return;
+    if (VERSION === 'development') {
+      // 開発時だけ、開いたタブを残したまま旧キャッシュの掃除へ進む。
+      event.waitUntil(self.skipWaiting());
+      return;
+    }
     event.waitUntil((async () => {
       const ready = await fill();
       // 初回は保存できなくてもヘッダー補助を提供。更新失敗なら動作中の旧版を維持する。
@@ -115,6 +119,14 @@ if (typeof window === 'undefined') {
     })());
   });
   self.addEventListener('activate', (event) => {
+    if (VERSION === 'development') {
+      event.waitUntil((async () => {
+        // 先に旧Workerへの新規取得を止め、その後で残った開発用保存を消す。
+        await self.clients.claim();
+        await caches.delete(CACHE);
+      })());
+      return;
+    }
     event.waitUntil((async () => {
       try {
         await (await caches.open(META)).put(ACTIVE, new Response(CACHE));
@@ -158,19 +170,18 @@ if (typeof window === 'undefined') {
     if (url.origin !== self.location.origin || !url.href.startsWith(scope)) return;
     if (url.pathname.endsWith('/offline-assets.json') || url.pathname.endsWith('/coi-serviceworker.js')) return;
     event.respondWith((async () => {
+      // 開発中のソースは保存も代替取得もしない。通信失敗をそのまま伝える。
+      if (VERSION === 'development') return withIsolation(await fetch(req));
       let cache, complete = false, hit;
       try {
         cache = await caches.open(CACHE);
-        complete = VERSION !== 'development' && !!await readyManifest();
+        complete = !!await readyManifest();
         // 不完全な保存を完成版として返さない。クエリ付き音声も同じ版の素材へ揃える。
-        if (complete || VERSION === 'development') hit = await cache.match(req, { ignoreSearch: complete });
+        if (complete) hit = await cache.match(req, { ignoreSearch: complete });
       } catch { /* 保存不可でもオンラインのヘッダー付与は続ける */ }
       if (complete && hit) return cachedResponse(hit, req);
       try {
         const res = await fetch(req);
-        if (VERSION === 'development' && res.ok && cache) {
-          try { await cache.put(req, res.clone()); } catch { /* 容量不足でも通信は続ける */ }
-        }
         return withIsolation(res);
       } catch (error) {
         const fallback = hit || (complete && req.mode === 'navigate' ? await cache.match(scope) : null);

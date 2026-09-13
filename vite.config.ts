@@ -10,7 +10,7 @@ const isolationHeaders = {
 export default defineConfig({
   base: './',
   build: { outDir: 'dist', target: 'es2022' },
-  server: { headers: isolationHeaders },
+  server: { port: 5173, strictPort: true, headers: isolationHeaders },
   preview: { headers: isolationHeaders },
   // Playwright の E2E（tests/e2e/*.spec.ts）は vitest で走らせない
   test: { environment: 'node', testTimeout: 20000, exclude: [...configDefaults.exclude, 'tests/**', '**/.claude/**'] },

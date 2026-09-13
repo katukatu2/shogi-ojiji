@@ -16,6 +16,8 @@ npm run typecheck
 npm run build      # dist/ に静的ファイルを出力
 ```
 
+開発は `http://localhost:5173` に統一しています（`npm run dev` と `.claude/launch.json` の起動とも同じ）。5173 が使用中なら別ポートへ移らずエラーになります。開発時の Service Worker は通信結果にヘッダーを付けるだけで、ソースを保存しません。以前の開発用キャッシュは Worker 更新時に自動で削除されるため、Clear site data は不要です。
+
 ## テスト
 
 ```bash
