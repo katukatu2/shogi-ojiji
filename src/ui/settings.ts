@@ -2,7 +2,7 @@ import { el } from './dom';
 import { type Style } from '../style/types';
 import { STYLES as ALL_STYLES, findStyle } from '../style';
 import {
-  type Progress, LEVELS, levelById, doneTaskSet, pickTask, badgesOf,
+  type Progress, LEVELS, levelById, doneTaskSet, tasksFor, pickTask, badgesOf,
   BADGE_LABEL, promotionLine, KAIDEN_CONDITION,
 } from '../game/progress';
 
@@ -67,10 +67,13 @@ export function renderSettings({ progress, selectedStyleId, onSelectStyle, onPro
     const style = j.style;
     const b = el('button', 'joseki-btn');
     const rec = progress.styles[style.id];
-    const taskCount = [...done].filter((k) => k.startsWith(style.id + ':')).length;
+    const tasks = tasksFor(style);
+    // 現在ある課題だけを数える。旧版の達成記録は保存データから削除しない。
+    const taskCount = tasks.filter((task) => done.has(`${style.id}:${task.id}`)).length;
+    const taskText = `課題 ${taskCount}/${tasks.length}`;
     const recText = rec && rec.games > 0
-      ? `<em>${rec.wins}勝 ${rec.games}局</em>${rec.scolded > 0 ? `<em>ばかもん ${rec.scolded}回</em>` : `<em>課題 ${taskCount}</em>`}`
-      : '<em>未対局</em>';
+      ? `<em>${rec.wins}勝 ${rec.games}局</em><em>${taskText}${rec.scolded > 0 ? `・ばかもん ${rec.scolded}回` : ''}</em>`
+      : `<em>未対局・${taskText}</em>`;
     // 取った免状（初勝利・叱られず勝利・皆伝）は小さな札で並べる。無ければ何も出さない
     const badges = badgesOf(progress, style.id);
     const badgeText = badges.length > 0 ? `<span class="badges">${badges.map((id) => `<em class="badge">${BADGE_LABEL[id]}</em>`).join('')}</span>` : '';
