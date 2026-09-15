@@ -8,6 +8,26 @@
 #
 # 手順は docs/deploy-xserver.md を参照。
 
+# ===== 0. 正しいホストと HTTPS へ寄せる =====
+# エックスサーバーのサブドメインは親ドメインの公開領域の下に作られるので、
+# 同じ場所が https://godo-amity.com/shogi/ でも見えてしまう。
+# 別オリジンになるため、放置すると Service Worker・localStorage・キャッシュが
+# 二重に作られ、同じ人の成績が二か所に分かれる。
+#
+# また HTTPS でないと SharedArrayBuffer が使えず、エンジンが起動せずに
+# 「判定: 簡易」へ静かに落ちる。気づきにくいので、ここで確実に寄せる。
+#
+# .htaccess 内の RewriteRule はこのディレクトリからの相対パスに当たるので、
+# どちらの入り口から来ても $1 は同じになる。
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP_HOST} !^shogi\.godo-amity\.com$ [NC]
+  RewriteRule ^(.*)$ https://shogi.godo-amity.com/$1 [R=301,L]
+
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^(.*)$ https://shogi.godo-amity.com/$1 [R=301,L]
+</IfModule>
+
 # ===== 1. クロスオリジン分離（必須）=====
 # やねうら王 WASM は SharedArrayBuffer を使うため、この 2 つが無いとエンジンが起動せず
 # 「判定: 簡易」に落ちる。値は scripts/serve-static.mjs と同じで、
