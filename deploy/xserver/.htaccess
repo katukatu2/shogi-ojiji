@@ -1,0 +1,56 @@
+# 将棋オジジの定石指南 — エックスサーバー配信用の設定
+#
+# 置き場所: 公開ディレクトリの直下（dist/ の中身を置いたのと同じ階層）。
+#
+# このファイルを dist/ や public/ に入れてはいけない。scripts/prepare-offline.mjs は
+# dist/ の全ファイルをオフライン目録に入れるので、Apache が既定で拒否する .htaccess を
+# Service Worker が取りに行き、オフライン保存が必ず失敗する。
+#
+# 手順は docs/deploy-xserver.md を参照。
+
+# ===== 1. クロスオリジン分離（必須）=====
+# やねうら王 WASM は SharedArrayBuffer を使うため、この 2 つが無いとエンジンが起動せず
+# 「判定: 簡易」に落ちる。値は scripts/serve-static.mjs と同じで、
+# PWA 試験 24 件（static-with-headers）が通っている構成である。
+#
+# mod_headers が無効なサーバーでは IfModule の外に書くと 500 になるので、必ず囲む。
+# 無効だった場合ヘッダーは付かないが、同梱の coi-serviceworker.js が Service Worker 経由で
+# 補うため動作はする（初回だけ再読み込みが入る）。
+<IfModule mod_headers.c>
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Cross-Origin-Embedder-Policy "require-corp"
+</IfModule>
+
+# ===== 2. MIME タイプ =====
+# .wasm が application/wasm で返らないと WebAssembly の読み込みに失敗する。
+<IfModule mod_mime.c>
+  AddType application/wasm .wasm
+  AddType application/manifest+json .webmanifest
+  AddType image/webp .webp
+</IfModule>
+
+# ===== 3. キャッシュ =====
+# 順序が意味を持つ。同じファイルに複数の FilesMatch が当たった場合、
+# **後に書いた Header set が勝つ**。だから「毎回確認」を必ず最後に置く。
+<IfModule mod_headers.c>
+  # Vite がビルドのたびに名前を変える資源（index-BWSW9Z35.js など）は永続で良い。
+  # ハッシュ部は 8 文字ちょうど。{8,} と書くと coi-serviceworker.js の "serviceworker"（13 文字）
+  # にも当たってしまい、更新の要である Service Worker が 1 年間キャッシュされる。
+  # ハッシュを持たない engine/ raizo/ sfx/ icons/ はここに含めず、
+  # Apache 既定の ETag / Last-Modified による再確認（304）に任せる。
+  <FilesMatch "-[A-Za-z0-9_-]{8}\.(js|css)$">
+    Header always set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # 更新の要になる 4 つ。長く持たせると、新しい版を出しても利用者の端末が古いままになる。
+  # 上の規則が将来誤って当たっても、ここが後に来るので必ずこちらが勝つ。
+  <FilesMatch "^(index\.html|offline-assets\.json|coi-serviceworker\.js|manifest\.webmanifest)$">
+    Header always set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
+
+# ===== 4. 圧縮 =====
+# wasm・webp・mp3 は圧縮済みなので二重には掛けない。
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/json application/manifest+json image/svg+xml
+</IfModule>
