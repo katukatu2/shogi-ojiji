@@ -21,8 +21,8 @@ import { playThunder, playPiece, stopSfx, setMuted, isMuted, warmUp, sfxElementF
 import { el } from './ui/dom';
 import { ScreenHistory, ScreenName } from './ui/navigation';
 
-// ソースコードの公開先。決まったら URL に差し替える（URL らしい文字列ならクレジット欄でリンクになる）
-const SOURCE_URL = '（公開先 URL）';
+// ソースコードの公開先。GPLv3（やねうら王）に基づく開示先で、クレジット欄からリンクする
+const SOURCE_URL = 'https://github.com/katukatu2/shogi-ojiji';
 
 
 const PROMOTED = new Set(['TO', 'NY', 'NK', 'NG', 'UM', 'RY']);

@@ -4,7 +4,7 @@
 ただし、その戦法相手にやってはいけない手を指すと、オジジがカットインして「ばかもーん！」と叱り、正しい手を教えてくれる。
 企画は [docs/plan.md](docs/plan.md)。
 
-開発引き継ぎ後の現在地は [リリース査読記録](docs/release-audit.md)。iPhone App Store・Android・Web を今回の対象とする。公開先・連絡先と実機検証が未完了で、まだ公開可能とは判定していない。
+開発引き継ぎ後の現在地は [リリース査読記録](docs/release-audit.md)。iPhone App Store・Android・Web を今回の対象とする。Web 版の配信先は shogi.godo-amity.com（エックスサーバー、手順は [deploy-xserver.md](docs/deploy-xserver.md)）。実機検証・署名・ストア提出が未完了で、まだ公開可能とは判定していない。
 
 ## 開発
 
@@ -207,4 +207,6 @@ npm run e2e:fullgame
 
 ## 連絡先
 
-不具合や質問は（公開先 URL）/issues へ。ソースコードの公開先が決まったら、`src/main.ts` の `SOURCE_URL`、`public/privacy.html`、`docs/store/listing.md`、`docs/release-checklist.md`、この節の URL を同時に差し替える。
+連絡先は shogi-ojiji@godo-amity.com（このアプリ専用）。不具合や質問は https://github.com/katukatu2/shogi-ojiji/issues でも受ける。
+
+ソース公開先を変えるときは、`src/main.ts` の `SOURCE_URL`、`public/privacy.html`、`docs/store/listing.md`、この節を同時に直す。
