@@ -50,7 +50,8 @@ describe('アイコン生成（scripts/build-icons.mjs）', () => {
     expect(ctx.corner).toBeCloseTo(56 / 256, 6);
     expect(ctx.webBackdrop).toBe('#efe6d2'); // manifest の background_color
     expect(ctx.androidBackdrop.toLowerCase()).toBe('#efe6d2'); // values/ic_launcher_background.xml（Web と同じ生成り色）
-    expect(ctx.inner).toContain('<g transform=');
+    // 今のオジジ（雷蔵）の顔を JPEG で埋め込む（scripts/build-icon-svg.py）。手描きの図形だった以前の icon.svg とは作りが違う
+    expect(ctx.inner).toContain('<image');
   });
 
   it('fitSide: 角丸が無ければ円に内接する正方形、角丸が半分なら円そのもの', () => {

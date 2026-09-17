@@ -22,7 +22,8 @@
     "release:check": "node scripts/check-release.mjs",
     "release:artifacts": "node scripts/check-release.mjs --artifacts-only",
     "store:shots": "node scripts/store-screenshots.mjs",
-    "icons": "node scripts/build-icons.mjs",
+    "icons": "node scripts/build-icons.mjs && python scripts/quantize-icons.py",
+    "assets:icon": "python scripts/build-icon-svg.py",
     "e2e:fullgame": "playwright test --config playwright.fullgame.config.ts"
   },
   "devDependencies": {
