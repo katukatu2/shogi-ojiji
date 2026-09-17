@@ -336,11 +336,17 @@ button {
   background: rgba(220, 40, 40, 0.4);
 }
 
+/* 駒の縁取り。五角形に切り抜く clip-path は border まで削るので、border では斜めの辺に線が出ない
+   （iPhone で「駒の色が薄くて見づらい」と指摘された。駒の地と盤のコントラスト比は 1.32 : 1 しかない）。
+   駒全体を縁の色で塗り、一回り小さい五角形を駒の色で重ねて、全周に縁を出す。
+   isolation で駒ごとに重なりの文脈を作り、z-index: -1 の内側を文字の下・縁の上に置く */
 .piece {
+  --piece-edge: 1.5px;
+  position: relative;
+  isolation: isolate;
   width: 84%;
   height: 90%;
-  background: var(--piece);
-  border: 1px solid var(--piece-line);
+  background: var(--piece-line);
   border-radius: 2px 2px 4px 4px;
   clip-path: polygon(50% 0, 88% 14%, 100% 100%, 0 100%, 12% 14%);
   display: flex;
@@ -350,6 +356,16 @@ button {
   font-weight: 700;
   font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
   line-height: 1;
+}
+
+.piece::before {
+  content: '';
+  position: absolute;
+  inset: var(--piece-edge);
+  z-index: -1;
+  background: var(--piece);
+  border-radius: inherit;
+  clip-path: polygon(50% 0, 88% 14%, 100% 100%, 0 100%, 12% 14%);
 }
 
 .piece.gote {
@@ -1580,6 +1596,7 @@ raizo-rig {
 }
 
 .mini-board .piece {
+  --piece-edge: 1px;
   width: 86%;
   height: 90%;
   font-size: 9px;
