@@ -2,7 +2,7 @@
 // リリース手順書（docs/release-checklist.md）、Android の CI（.github/workflows/android.yml）。
 // YAML の解析ライブラリは入れていないので、ワークフローは文字列で「手順とパスの整合」だけ見る。
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 const read = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 
@@ -59,7 +59,7 @@ describe('ストア掲載文（docs/store/listing.md）', () => {
     expect(md).toMatch(/- 対象ユーザー: /);
     expect(md).toMatch(/- カテゴリ: /);
     // ストア用アイコンとして案内しているファイルが実在する
-    expect(existsSync('public/icons/icon-512-square.png')).toBe(true);
+    expect(existsSync('public/app-icons/icon-512-square.png')).toBe(true);
   });
 });
 
@@ -129,5 +129,16 @@ describe('Android の CI（.github/workflows/android.yml）', () => {
     const sdk = Number(read('android/variables.gradle').match(/compileSdkVersion = (\d+)/)?.[1]);
     expect(sdk).toBeGreaterThan(0);
     expect(yml).toContain(`platforms;android-${sdk}`);
+  });
+});
+
+describe('配信先の Apache で横取りされるフォルダー名', () => {
+  // Apache の既定設定は /icons/ /error/ /manual/ /cgi-bin/ をサーバー内蔵の場所へ Alias している。
+  // エックスサーバーでも /icons/ が横取りされ、public/icons/ に置いたアイコン 5 枚が全部 404 になった。
+  // .htaccess では外せない（Alias はディレクトリの設定より先に処理される）ので、名前を避けるしかない。
+  it('public/ の直下に、その名前のフォルダーを置かない', () => {
+    const reserved = ['icons', 'error', 'manual', 'cgi-bin'];
+    const dirs = readdirSync('public', { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    expect(dirs.filter((d) => reserved.includes(d))).toEqual([]);
   });
 });

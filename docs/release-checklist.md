@@ -59,9 +59,9 @@ Cross-Origin-Embedder-Policy: require-corp
 - [ ] 2 回目の読み込みをオフライン（DevTools の Network を Offline）で開いてもタイトルが出る
 - [ ] 初回の保存失敗時はオフライン未保存の案内が出て、接続中はエンジンで指せる。通信復帰後の再試行で案内が消え、オフライン再起動できる
 - [ ] 更新が欠けたときは旧版のまま動き、正常な更新は既存タブを閉じた後に切り替わる。`npm run e2e:pwa` が通る
-- [ ] `https://<配信先>/privacy.html` が開ける。`manifest.webmanifest` と `icons/` が 200 で返る
+- [ ] `https://<配信先>/privacy.html` が開ける。`manifest.webmanifest` と `app-icons/` が 200 で返る
 - [ ] Chrome の Lighthouse（PWA / Installability）で、インストール可能と出る。Android Chrome で「ホーム画面に追加」した時のアイコンの角が欠けていない（maskable）
-- [ ] iOS Safari で「ホーム画面に追加」した時のアイコンが黒い角無しで出る（`icons/apple-touch-icon-180.png`）
+- [ ] iOS Safari で「ホーム画面に追加」した時のアイコンが黒い角無しで出る（`app-icons/apple-touch-icon-180.png`）
 
 ## 2. Android（Google Play）
 
@@ -146,7 +146,7 @@ cd android
 
 - [ ] アプリを作成（アプリ名・デフォルトの言語 日本語・「ゲーム」・無料）
 - [ ] 「アプリのコンテンツ」: 公開済みプライバシーポリシー URL、広告、データセーフティ、年齢質問票、対象ユーザーを実際のアプリ・配信先に沿って申告した。年齢・対象ユーザーを未確認のまま固定しない
-- [ ] 「ストアの掲載情報」: [listing.md](store/listing.md) のアプリ名・短い説明・詳しい説明、アイコン `public/icons/icon-512-square.png`、フィーチャーグラフィック 1024×500、スクリーンショット 5 枚
+- [ ] 「ストアの掲載情報」: [listing.md](store/listing.md) のアプリ名・短い説明・詳しい説明、アイコン `public/app-icons/icon-512-square.png`、フィーチャーグラフィック 1024×500、スクリーンショット 5 枚
 - [ ] 「Play アプリ署名」を有効にし、`app-release.aab` を内部テストにアップロード
 - [ ] 内部テストの端末で 2-2 の項目をもう一度確認してから、製品版へ昇格
 

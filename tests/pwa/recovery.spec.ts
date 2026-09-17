@@ -5,7 +5,7 @@ for (const failure of ['asset', 'manifest', 'version'] as const) {
   test(`${viewport.width}×${viewport.height} 初回の${failure}障害を見える位置で知らせ、再試行後はオフラインで起動する`, async ({ page, context, request }, info) => {
     await page.setViewportSize(viewport);
     const path = `/fault/${failure}-${viewport.width}-${info.project.name}/`;
-    const target = path + (failure === 'asset' ? 'icons/icon-512-square.png' : 'offline-assets.json');
+    const target = path + (failure === 'asset' ? 'app-icons/icon-512-square.png' : 'offline-assets.json');
     expect((await request.post('/__test/fault', { data: { path: target, mode: failure === 'version' ? 'version' : 'missing' } })).ok()).toBe(true);
     await page.goto(path);
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller && crossOriginIsolated).catch(() => false)).toBe(true);

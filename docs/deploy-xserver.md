@@ -81,10 +81,17 @@ npm run build
 ├── coi-serviceworker.js
 ├── assets/
 ├── engine/
-├── icons/
+├── app-icons/
 ├── raizo/
 └── sfx/
 ```
+
+> **アイコンのフォルダー名が `icons/` ではなく `app-icons/` である理由。**
+> Apache の既定設定は `/icons/` をサーバー内蔵のアイコン置き場に割り当てている（`Alias`）。
+> エックスサーバーでもこれが有効で、`public_html/shogi/icons/` にファイルを置いても
+> `/icons/icon-192.png` は 404 になり、代わりに Apache 内蔵の `/icons/folder.gif` が返った。
+> `.htaccess` では外せないので名前を変えた。`/error/` `/manual/` `/cgi-bin/` も同じ理由で使わない
+> （`src/release.test.ts` が検査する）。
 
 ### 5. 確かめる
 

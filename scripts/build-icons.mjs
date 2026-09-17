@@ -1,11 +1,11 @@
 // public/icon.svg からアイコンの PNG 一式を作る（npm run icons）。@resvg/resvg-js で描くので、ブラウザや ImageMagick は要らない。
 //
 // 出力（生成物は git に入れる。icon.svg を変えたら作り直す）:
-//   public/icons/icon-192.png, icon-512.png ................ PWA 用（purpose any）。角丸の外は透明
-//   public/icons/icon-512-maskable.png ...................... PWA 用（purpose maskable）。manifest の background_color で余白を取り、
+//   public/app-icons/icon-192.png, icon-512.png ................ PWA 用（purpose any）。角丸の外は透明
+//   public/app-icons/icon-512-maskable.png ...................... PWA 用（purpose maskable）。manifest の background_color で余白を取り、
 //                                                             角丸の角まで安全域（中心から半径 40% の円）に収める。どの形に切り抜かれても角が欠けない
-//   public/icons/apple-touch-icon-180.png ................... iOS のホーム画面用。透明は黒く塗られるので、地の色で四隅まで塗りつぶす（角の丸めは iOS がする）
-//   public/icons/icon-512-square.png ........................ Play Console に出すアイコン。同じく四隅まで塗る（角の丸めは Play がする）
+//   public/app-icons/apple-touch-icon-180.png ................... iOS のホーム画面用。透明は黒く塗られるので、地の色で四隅まで塗りつぶす（角の丸めは iOS がする）
+//   public/app-icons/icon-512-square.png ........................ Play Console に出すアイコン。同じく四隅まで塗る（角の丸めは Play がする）
 //   android/app/src/main/res/mipmap-*/ic_launcher.png ....... 旧式のランチャー（48dp）。角丸の外は透明
 //   android/app/src/main/res/mipmap-*/ic_launcher_round.png . 旧式の丸いランチャー（48dp）。values/ic_launcher_background.xml の色の円に収める
 //   android/app/src/main/res/mipmap-*/ic_launcher_foreground.png . adaptive icon の前景（108dp 相当）。中央の安全域（66dp の円）に収め、周りは透明。
@@ -42,11 +42,11 @@ const DEFAULT_ANDROID_BACKDROP = '#ffffff';
  */
 export function listOutputs() {
   const list = [
-    { file: 'public/icons/icon-192.png', size: 192, kind: 'plain' },
-    { file: 'public/icons/icon-512.png', size: 512, kind: 'plain' },
-    { file: 'public/icons/icon-512-maskable.png', size: 512, kind: 'maskable' },
-    { file: 'public/icons/apple-touch-icon-180.png', size: 180, kind: 'square' },
-    { file: 'public/icons/icon-512-square.png', size: 512, kind: 'square' },
+    { file: 'public/app-icons/icon-192.png', size: 192, kind: 'plain' },
+    { file: 'public/app-icons/icon-512.png', size: 512, kind: 'plain' },
+    { file: 'public/app-icons/icon-512-maskable.png', size: 512, kind: 'maskable' },
+    { file: 'public/app-icons/apple-touch-icon-180.png', size: 180, kind: 'square' },
+    { file: 'public/app-icons/icon-512-square.png', size: 512, kind: 'square' },
     { file: 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png', size: 1024, kind: 'square' },
   ];
   for (const suffix of ['', '-1', '-2']) {

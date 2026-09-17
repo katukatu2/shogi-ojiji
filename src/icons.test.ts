@@ -120,11 +120,11 @@ describe('アイコン生成（scripts/build-icons.mjs）', () => {
 
   it('書き出す一覧: Web 5 点と Android 5 密度 × 3 点で、寸法が dp に合う', () => {
     const byFile = new Map(OUTPUTS.map((o) => [o.file, o]));
-    expect(byFile.get('public/icons/icon-192.png')).toMatchObject({ size: 192, kind: 'plain' });
-    expect(byFile.get('public/icons/icon-512.png')).toMatchObject({ size: 512, kind: 'plain' });
-    expect(byFile.get('public/icons/icon-512-maskable.png')).toMatchObject({ size: 512, kind: 'maskable' });
-    expect(byFile.get('public/icons/apple-touch-icon-180.png')).toMatchObject({ size: 180, kind: 'square' });
-    expect(byFile.get('public/icons/icon-512-square.png')).toMatchObject({ size: 512, kind: 'square' });
+    expect(byFile.get('public/app-icons/icon-192.png')).toMatchObject({ size: 192, kind: 'plain' });
+    expect(byFile.get('public/app-icons/icon-512.png')).toMatchObject({ size: 512, kind: 'plain' });
+    expect(byFile.get('public/app-icons/icon-512-maskable.png')).toMatchObject({ size: 512, kind: 'maskable' });
+    expect(byFile.get('public/app-icons/apple-touch-icon-180.png')).toMatchObject({ size: 180, kind: 'square' });
+    expect(byFile.get('public/app-icons/icon-512-square.png')).toMatchObject({ size: 512, kind: 'square' });
     const expected: Record<string, [number, number]> = { mdpi: [48, 162], hdpi: [72, 243], xhdpi: [96, 324], xxhdpi: [144, 486], xxxhdpi: [192, 648] };
     for (const density of Object.keys(DENSITIES)) {
       const dir = `android/app/src/main/res/mipmap-${density}`;
@@ -174,9 +174,9 @@ describe('manifest と index.html のアイコン参照', () => {
 
   it('manifest に any の 192・512 と maskable の 512 がある', () => {
     const find = (purpose: string, sizes: string) => manifest.icons.find((i) => i.purpose === purpose && i.sizes === sizes && i.type === 'image/png');
-    expect(find('any', '192x192')?.src).toBe('./icons/icon-192.png');
-    expect(find('any', '512x512')?.src).toBe('./icons/icon-512.png');
-    expect(find('maskable', '512x512')?.src).toBe('./icons/icon-512-maskable.png');
+    expect(find('any', '192x192')?.src).toBe('./app-icons/icon-192.png');
+    expect(find('any', '512x512')?.src).toBe('./app-icons/icon-512.png');
+    expect(find('maskable', '512x512')?.src).toBe('./app-icons/icon-512-maskable.png');
     // maskable の余白の色は manifest の background_color（生成側が読む値）
     expect(manifest.background_color).toBe(ctx.webBackdrop);
   });
@@ -184,8 +184,8 @@ describe('manifest と index.html のアイコン参照', () => {
   it('index.html の apple-touch-icon は 180px の PNG を指し、manifest も参照している', () => {
     const html = readFileSync(join(root, 'index.html'), 'utf8');
     const m = html.match(/<link rel="apple-touch-icon"[^>]*href="([^"]+)"/);
-    expect(m?.[1]).toBe('./icons/apple-touch-icon-180.png');
-    expect(existsSync(join(root, 'public', 'icons', 'apple-touch-icon-180.png'))).toBe(true);
+    expect(m?.[1]).toBe('./app-icons/apple-touch-icon-180.png');
+    expect(existsSync(join(root, 'public', 'app-icons', 'apple-touch-icon-180.png'))).toBe(true);
     expect(html).toContain('<link rel="manifest" href="./manifest.webmanifest" />');
   });
 });
