@@ -143,3 +143,29 @@ test('回数は 0 のものを出さず、課題を逃したら一言だけ', as
   await expect(result.getByText('課題は次回', { exact: true })).toBeVisible();
   await expect(result.locator('.stamp')).toHaveCount(0);
 });
+
+// 今日の 3 手のカードは、説明文の長さで高さが変わり盤の位置が揃わなかった。説明文は拡大表示で読む。
+test('今日の 3 手のカードは説明文を出さず、盤の上端が揃う', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await startBouginGame(page);
+  await page.evaluate(() => {
+    const base = { capture: false, recapture: false, inCheck: false, legalCount: 30, depth: 10, hinted: false, headline: '', why: '', betterKanji: '', betterUsi: '', praise: '', gap: 0 };
+    const opening = ['7g7f', '3c3d', '2g2f', '4c4d', '2f2e', '2b3c', '3i4h', '8b4b', '5i6h', '5a6b', '6h7h', '6b7b'];
+    (window as any).__ojiji.game().logs = [
+      // 悪化した手（札なし、手の行は 1 行）と、好転した手（「（好手）」の札で手の行が折り返す）
+      { ...base, ply: 13, movesBefore: opening, usi: '3g3f', kanji: '▲３六歩', before: 120, after: -520, playedBest: false, level: 3 },
+      { ...base, ply: 21, movesBefore: [...opening, '3g3f', '7b8b', '4h3g', '9c9d', '9g9f', '1c1d', '1g1f', '6a5b'], usi: '2e2d', kanji: '▲２四歩', before: -300, after: 450, playedBest: true, level: 1 },
+    ];
+  });
+  await finish(page, 'lose');
+  const cards = page.locator('.result .moment');
+  await expect(cards).toHaveCount(2);
+  await expect(page.locator('.result .moment-text')).toHaveCount(0);
+  const tops = await cards.locator('.mini-board').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(tops[0]).toBe(tops[1]);
+  // 札はまとまりで折り返し、文字の途中で切れない
+  await expect(cards.nth(1).locator('.moment-label')).toHaveCSS('white-space', 'nowrap');
+  // 説明文は拡大表示で読める
+  await cards.nth(0).click();
+  await expect(page.locator('.moment-view .moment-why')).not.toBeEmpty();
+});

@@ -900,6 +900,8 @@ button {
 
 .result h2 {
   text-align: center;
+  /* 「…覚えてから来｜い。」のように最後の数文字だけが次の行に落ちないよう、行の長さを揃える */
+  text-wrap: balance;
 }
 
 .result h2.long {
@@ -1516,6 +1518,10 @@ raizo-rig {
 }
 
 .moment {
+  /* ボタンは中身を上下中央に寄せるので、手の行が 1 行か 2 行かで盤の位置がずれる。上詰めにする */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   flex: 0 0 150px;
   background: #fff;
   border-radius: 10px;
@@ -1636,12 +1642,11 @@ raizo-rig {
   margin-top: 4px;
 }
 
-.moment-text {
-  font-size: 11px;
-  line-height: 1.45;
-  margin-top: 2px;
-  color: #4a3a2a;
+.moment-label {
+  display: inline-block;
+  white-space: nowrap;
 }
+
 
 .mini-board {
   display: grid;

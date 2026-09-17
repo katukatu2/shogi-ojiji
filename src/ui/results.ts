@@ -2,7 +2,7 @@ import { el } from './dom';
 import { miniBoard, positionAfter } from './miniboard';
 import { safeMove } from '../style/judge';
 import { BADGE_LABEL, titleOf, Progress, Promotion, GameResult as Result } from '../game/progress';
-import { keyMoments, momentLabel, momentCaption, KeyMoment } from '../game/review';
+import { keyMoments, momentLabel, KeyMoment } from '../game/review';
 import type { Game } from '../game/session';
 import type { Expression } from './ojiji';
 
@@ -76,9 +76,12 @@ export function renderResult({ game, result, progress, lastOutcome, faceInto, on
       const pos = positionAfter(mo.log.movesBefore);
       const played = safeMove(pos, mo.log.usi);
       card.append(miniBoard(pos, played));
-      const suffix = mo.kind === 'blunder' ? '' : `（${momentLabel(mo, reviewOpts)}）`;
-      card.append(el('div', 'moment-move', `${mo.log.ply}手目 ${mo.log.kanji}${suffix}`));
-      card.append(el('div', 'moment-text', momentCaption(mo, reviewOpts)));
+      const move = el('div', 'moment-move', `${mo.log.ply}手目 ${mo.log.kanji}`);
+      // 札（好手・決め手など）は途中で折り返さず、まとまりで次の行へ送る
+      if (mo.kind !== 'blunder') move.append(el('span', 'moment-label', `（${momentLabel(mo, reviewOpts)}）`));
+      card.append(move);
+      // 説明文はカードに出さない。文の長さでカードの高さが変わり、盤の位置が揃わなかった。
+      // 説明はタップした拡大表示（ui/review.ts の moment-why）で読む
       card.addEventListener('click', () => onMoment(moments, i, false, reviewOpts));
       row.append(card);
     });
