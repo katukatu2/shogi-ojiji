@@ -34,6 +34,10 @@ for (const path of ['/', '/sub/']) {
 test('配信元が Vary を付けても、保存完了後は通信なしでページと素材を返す', async ({ page, context }) => {
   await page.goto('/');
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller).catch(() => false)).toBe(true);
+  // ヘッダーなしの配信では、Service Worker が有効になった直後にページを 1 回読み込み直す。
+  // その最中に問い合わせると失敗するので、分離が有効になる（読み込み直しが終わる）まで待つ
+  await expect.poll(() => page.evaluate(() => crossOriginIsolated).catch(() => false)).toBe(true);
+  await expect(page.getByRole('heading', { name: '将棋オジジの定石指南' })).toBeVisible();
   const vary = await page.evaluate(async () => (await fetch('./', { cache: 'no-store' })).headers.get('vary'));
   expect(vary).toContain('Accept-Encoding');
   // Service Worker が完了とみなす印（.ojiji-ready）が版のキャッシュに書かれるまで待つ
