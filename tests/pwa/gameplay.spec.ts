@@ -35,7 +35,8 @@ test(`${viewport.width}×${viewport.height} 製品版で実際に角を損する
   page.once('dialog', (dialog) => { expect(dialog.message()).toBe('投了しますか？'); void dialog.accept(); });
   await page.getByRole('button', { name: '投了する', exact: true }).click();
   const result = page.locator('.result');
-  await expect(result.getByRole('heading', { name: '投了か。潔いのは悪くない。' })).toBeVisible();
+  // オジジの一言は一つだけ（投了は戦法との戦い方の教え）
+  await expect(result.locator('h2')).not.toBeEmpty();
   const moment = result.locator('.moment').filter({ hasText: played });
   await expect(moment).toHaveCount(1);
   await moment.click();

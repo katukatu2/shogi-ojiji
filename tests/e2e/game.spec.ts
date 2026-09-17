@@ -124,9 +124,10 @@ test.describe('対局', () => {
 
     // 結果画面（対局画面の操作ボタンにも「タイトルへ」があるので、結果の板の中で探す）
     const result = page.locator('.panel.result');
-    await expect(result.getByRole('heading', { name: '投了か。潔いのは悪くない。' })).toBeVisible();
-    await expect(result.getByText('ばかもん 0 ／ 悪手 0 ／ ヒント 0 ／ 待った 0')).toBeVisible();
-    await expect(result.getByText(/^課題は次回: /)).toBeVisible();
+    // オジジの一言は一つ（投了は棒銀との戦い方の教え）。回数は全部 0 なので行ごと出ない。課題は一言だけ
+    await expect(result.locator('h2')).not.toBeEmpty();
+    await expect(result.locator('.score')).toHaveCount(0);
+    await expect(result.getByText('課題は次回', { exact: true })).toBeVisible();
     await expect(result.getByRole('button', { name: '戦法を変える' })).toBeVisible();
     await expect(result.getByRole('button', { name: 'タイトルへ' })).toBeVisible();
     expect((await gameState(page))?.result).toBe('resign');

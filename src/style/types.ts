@@ -37,7 +37,6 @@ export interface Style {
   lessons: string[];
   // 現在の盤面について話す助言は、実際にその条件が成立するときだけ候補にする。
   conditionalLessons?: { text: string; when(pos: Position): boolean }[];
-  // 結果画面の一言
-  winLine: string; // プレイヤーが勝ったとき
-  loseLine: string; // プレイヤーが負けたとき
+  // 結果画面の一言（プレイヤーが勝ったとき）。負けたときは lessons から教えを一つ出す
+  winLine: string;
 }

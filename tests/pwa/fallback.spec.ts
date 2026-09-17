@@ -21,7 +21,8 @@ test('製品版の簡易判定でも実際に対局・投了し、架空の形�
   await expect(page.getByText('5手目', { exact: true })).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByRole('button', { name: '投了する', exact: true }).click();
-  await expect(page.locator('.result')).toContainText('投了か。潔いのは悪くない。');
+  // オジジの一言は一つだけ（投了は戦法との戦い方の教え）
+  await expect(page.locator('.result h2')).not.toBeEmpty();
   await expect(page.locator('.result .score')).toContainText('悪手 1');
   await expect(page.locator('.result .moment')).toHaveCount(0); // 評価の無い対局から形勢カードを捏造しない
   const progress = await page.evaluate(() => JSON.parse(localStorage.getItem('ojiji.progress.v2')!));

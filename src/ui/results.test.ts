@@ -23,3 +23,18 @@ describe('結果に出す戦法別の助言', () => {
     expect(closingWord(g, 'lose')).toContain('相手の銀が前に出ておる');
   });
 });
+
+describe('結果画面のオジジの一言（一つだけ）', () => {
+  const style = STYLES.find((s) => s.id === 'yagura')!;
+  const g = (hints: number) => ({ style, pos: Position.initial(), hints, scolded: 0, badMoves: 0 });
+  it('勝ちは戦法ごとの台詞', () => {
+    expect(closingWord(g(0), 'win')).toBe(style.winLine);
+    expect(closingWord(g(9), 'win')).toBe(style.winLine);
+  });
+  it('ヒントに頼りすぎた勝ちは、それを言う', () => {
+    expect(closingWord(g(10), 'win')).toContain('ヒントに頼りすぎ');
+  });
+  it('負けたときの台詞だったものは、戦法の教えの候補に残っている', () => {
+    expect(style.lessons).toContain('矢倉は堅い。崩し方を覚えてから来い。');
+  });
+});

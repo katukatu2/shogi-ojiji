@@ -107,11 +107,11 @@ export const BOUGIN: Style = {
     '棒銀は銀を追い返せば攻めが切れる。歩で銀の頭を叩け。',
     '８七の歩を守る銀か角を、相手の銀が来る前に用意せよ。',
     '棒銀相手に囲いを急ぐな。まず受けの形、それから囲え。',
+    '棒銀は単純じゃが、受け間違えれば一気じゃ。',
   ],
   conditionalLessons: [{
     text: '相手の銀が前に出ておる。受け切ってから反撃の機会を探すのじゃ。',
     when: (pos) => pos.board.some((piece, i) => piece?.color === 1 && piece.type === 'GI' && Math.floor(i / 9) >= 3),
   }],
   winLine: 'むう、わしの銀が追い返されるとは。',
-  loseLine: '棒銀は単純じゃが、受け間違えれば一気じゃ。',
 };
