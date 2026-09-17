@@ -475,9 +475,74 @@ function buildGameScreen(): void {
   app.append(g);
 }
 
+// ===== 駒が動く演出 =====
+// iPhone で遊んだ感想「駒が動くときにスムーズさが欲しい」への対応。盤は一手ごとに駒を作り直すので、
+// 描画のたびに「最後の手」が前回の描画から変わっていれば、移動先の駒を移動元から滑らせる。
+// 持ち駒を打つ手は持ち駒の列から滑らせる。「待った」で戻した手は描画済みとして扱い、動かさない（takeBack）。
+let moveAnimMs = 150;
+let seenMove: Move | null = null; // 描画に反映済みの最終手
+let sliding: { move: Move; dx: number; dy: number; start: number } | null = null;
+
+function cellEl(sq: Sq): HTMLElement | undefined {
+  return boardEl.children[sq.y * 9 + sq.x] as HTMLElement | undefined;
+}
+
+function centerOf(e: Element): { x: number; y: number } | null {
+  const r = e.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+}
+
+// 新しい最終手の移動元と移動先のずれを測る。盤と持ち駒の列が描き直される前（前回の描画のまま）に呼ぶ
+function startSlide(m: Move, pos: Position): void {
+  sliding = null;
+  if (moveAnimMs <= 0 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const toCell = cellEl(m.to);
+  const piece = pos.get(m.to.x, m.to.y);
+  if (!toCell || !piece) return;
+  let from: Element | undefined;
+  if (m.from) {
+    from = cellEl(m.from);
+  } else {
+    // 打つ駒は、前回の描画に残っている持ち駒の列から、その駒の札を探す（無ければ列全体）
+    const hand = handEls[piece.color];
+    from = Array.from(hand.querySelectorAll('.hp')).find((d) => d.firstChild?.textContent === PIECE_KANJI[m.piece]) ?? hand;
+  }
+  const a = from && centerOf(from);
+  const b = centerOf(toCell);
+  if (!a || !b || (a.x === b.x && a.y === b.y)) return;
+  sliding = { move: m, dx: a.x - b.x, dy: a.y - b.y, start: performance.now() };
+}
+
+// 移動先に作り直した駒へ演出を付ける。滑っている途中で描き直されたら、経過時間を引き継いで続きから動かす
+function slidePiece(pe: HTMLElement, gote: boolean): void {
+  if (!sliding) return;
+  const elapsed = performance.now() - sliding.start;
+  if (elapsed >= moveAnimMs) {
+    sliding = null;
+    return;
+  }
+  // 後手の駒は CSS で 180 度回しているので、演出の transform にも回転を含める（最後の形を CSS と揃える）
+  const rot = gote ? 'rotate(180deg)' : 'none';
+  const shift = `translate(${sliding.dx}px, ${sliding.dy}px)` + (gote ? ' rotate(180deg)' : '');
+  // 滑っている間は他のマスの駒より上に描き、タップは下のマスへ通す
+  pe.style.zIndex = '2';
+  pe.style.pointerEvents = 'none';
+  const anim = pe.animate([{ transform: shift }, { transform: rot }], { duration: moveAnimMs, easing: 'ease-out' });
+  anim.currentTime = elapsed;
+  anim.onfinish = () => {
+    pe.style.zIndex = '';
+    pe.style.pointerEvents = '';
+  };
+}
+
 function render(): void {
   if (!game) return;
   const pos = game.pos;
+  if (game.lastMove !== seenMove) {
+    seenMove = game.lastMove;
+    if (seenMove) startSlide(seenMove, pos);
+    else sliding = null;
+  }
   legalCache = pos.turn === 0 && !game.result ? pos.legalMoves() : [];
   const inCheck = pos.inCheck(pos.turn);
   const king = inCheck ? pos.findKing(pos.turn) : null;
@@ -499,6 +564,7 @@ function render(): void {
       const pe = el('div', 'piece' + (p.color === 1 ? ' gote' : '') + (PROMOTED.has(p.type) ? ' promoted' : ''));
       pe.textContent = PIECE_KANJI[p.type];
       cell.append(pe);
+      if (sliding && sqEq(sliding.move.to, { x, y })) slidePiece(pe, p.color === 1);
     }
     if (game.lastMove && sqEq(game.lastMove.to, { x, y })) cell.classList.add('last');
     if (selectedSq && sqEq(selectedSq, { x, y })) cell.classList.add('sel');
@@ -880,6 +946,9 @@ function takeBack(): void {
   selectedHand = null;
   hintMove = null;
   hintedUsi = null;
+  // 戻した結果の最終手（前のオジジの手）は既に見せた手なので、もう一度滑らせない
+  seenMove = g.lastMove;
+  sliding = null;
   render();
   showToast('thinking', '待ったか', 'まあ、勉強のうちじゃ。今度はよく考えよ。', 3000, 'ui');
   g.judge.prefetch(g.pos);
@@ -1125,7 +1194,7 @@ function showMoment(moments: KeyMoment[], index: number, after = false, opts: { 
 // 対局後の一言。叱られ方に合わせて一つだけ
 // 開発時だけ、画面の確認用に内部関数を公開する
 if (import.meta.env.DEV) {
-  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, render, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, piece: pieceElementForDebug, setMuted, playThunder, playPiece };
+  (window as unknown as { __ojiji: unknown }).__ojiji = { endGame, game: () => game, render, ojijiSvg, showToast, rig, sfx: sfxElementForDebug, piece: pieceElementForDebug, setMuted, playThunder, playPiece, setMoveAnimMs: (ms: number) => { moveAnimMs = ms; } };
 }
 
 showTitle();
