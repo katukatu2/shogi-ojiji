@@ -4,7 +4,7 @@
 ただし、その戦法相手にやってはいけない手を指すと、オジジがカットインして「ばかもーん！」と叱り、正しい手を教えてくれる。
 企画は [docs/plan.md](docs/plan.md)。
 
-開発引き継ぎ後の現在地は [リリース査読記録](docs/release-audit.md)。iPhone App Store・Android・Web を今回の対象とする。Web 版の配信先は shogi.godo-amity.com（エックスサーバー、手順は [deploy-xserver.md](docs/deploy-xserver.md)）。実機検証・署名・ストア提出が未完了で、まだ公開可能とは判定していない。
+**Web 版 1.0.0 を https://shogi.godo-amity.com/ で公開中**（エックスサーバー、配信手順は [deploy-xserver.md](docs/deploy-xserver.md)）。公開した版は git のタグ `v1.0.0` で示す。iPhone の実機（Safari とホーム画面に追加したアプリ）で、エンジンによる判定・通信なしでの対局・アプリ切り替えからの復帰を確認済み。App Store・Google Play への提出は未着手（下の「ライセンス」を参照）。これまでの査読の経緯は [リリース査読記録](docs/release-audit.md)。
 
 ## 開発
 
@@ -167,7 +167,7 @@ npm run cap:ios          # build → sync → Xcode を開く（ios/ 生成済�
 使用素材のクレジット（アプリのタイトル画面と概要欄に表記する）:
 - 将棋エンジン: やねうら王 WebAssembly 版（GPLv3）／ 評価関数: 水匠 Petite
 - 駒音: 無料効果音で遊ぼう！（小森平）　https://taira-komori.net/
-ユーザーの希望により今回から iPhone App Store 版も対象。GPL に沿ったソース提供と App Store 配布条件の整合は未確認で、提出前に解決する。
+ストア版は未提出。Web 版はソースを GitHub で公開しており GPLv3 の義務を満たす。App Store の配布条件と GPLv3 の整合は未確認で、提出するなら先に解決する必要がある。
 
 ## 自動対局でオジジの台詞を点検する
 
