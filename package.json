@@ -1,6 +1,6 @@
 {
   "name": "shogi-ojiji",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,6 +24,7 @@
     "store:shots": "node scripts/store-screenshots.mjs",
     "icons": "node scripts/build-icons.mjs && python scripts/quantize-icons.py",
     "assets:icon": "python scripts/build-icon-svg.py",
+    "assets:ogp": "node scripts/build-ogp.mjs",
     "e2e:fullgame": "playwright test --config playwright.fullgame.config.ts"
   },
   "devDependencies": {

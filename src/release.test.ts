@@ -142,3 +142,43 @@ describe('配信先の Apache で横取りされるフォルダー名', () => {
     expect(dirs.filter((d) => reserved.includes(d))).toEqual([]);
   });
 });
+
+// LINE・X でリンクを共有したときの表示。知人に送る最初の一通が、題名と絵の付いた見た目になるように
+describe('共有したときの表示（OGP）', () => {
+  const html = read('index.html');
+  const meta = (attr: string, key: string) => html.match(new RegExp(`<meta ${attr}="${key}" content="([^"]*)"`))?.[1];
+
+  it('題名・説明・URL・画像を持ち、URL は公開先の絶対 URL', () => {
+    expect(meta('property', 'og:title')).toBe('将棋オジジの定石指南');
+    expect(meta('property', 'og:url')).toBe('https://shogi.godo-amity.com/');
+    expect(meta('property', 'og:image')).toBe('https://shogi.godo-amity.com/ogp.jpg');
+    expect(meta('name', 'twitter:card')).toBe('summary_large_image');
+    // 説明文はストア掲載文の短い説明と同じもの
+    const lines = read('docs/store/listing.md').split(String.fromCharCode(10));
+    const short = lines[lines.findIndex((l) => l.startsWith('## 短い説明')) + 2].replace(/^> /, '').trim();
+    expect(meta('property', 'og:description')).toBe(short);
+    expect(meta('name', 'description')).toBe(short);
+  });
+
+  it('画像は public にあり、宣言した 1200×630 の JPEG で、重すぎない', () => {
+    const jpg = readFileSync('public/ogp.jpg');
+    expect(jpg[0]).toBe(0xff);
+    expect(jpg[1]).toBe(0xd8);
+    // JPEG の SOF マーカーから幅と高さを読む
+    let size: [number, number] | null = null;
+    for (let i = 2; i < jpg.length - 9; ) {
+      if (jpg[i] !== 0xff) { i++; continue; }
+      const marker = jpg[i + 1];
+      const len = jpg.readUInt16BE(i + 2);
+      if (marker >= 0xc0 && marker <= 0xc3) { size = [jpg.readUInt16BE(i + 7), jpg.readUInt16BE(i + 5)]; break; }
+      i += 2 + len;
+    }
+    expect(size).toEqual([Number(meta('property', 'og:image:width')), Number(meta('property', 'og:image:height'))]);
+    expect(size).toEqual([1200, 630]);
+    expect(jpg.length).toBeLessThan(300 * 1024);
+  });
+
+  it('共有用の画像はオフライン保存の対象に入れない（遊ぶ人の端末には要らない）', () => {
+    expect(read('scripts/prepare-offline.mjs')).toContain("'ogp.jpg'");
+  });
+});

@@ -8,7 +8,8 @@ copyFileSync('LICENSE', resolve(root, 'LICENSE.txt'));
 const files = readdirSync(root, { recursive: true, withFileTypes: true })
   .filter((entry) => entry.isFile())
   .map((entry) => resolve(entry.parentPath, entry.name).slice(root.length + 1).replaceAll('\\', '/'))
-  .filter((file) => !['offline-assets.json', 'coi-serviceworker.js'].includes(file))
+  // ogp.jpg は共有先（LINE・X など）が取りに来る画像で、遊ぶ人の端末には要らないので保存の対象から外す
+  .filter((file) => !['offline-assets.json', 'coi-serviceworker.js', 'ogp.jpg'].includes(file))
   .sort();
 const hash = createHash('sha256');
 const sha256 = {};
