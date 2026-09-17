@@ -112,6 +112,21 @@ crossOriginIsolated
 
 `.wasm` が正しい型で返っているかは、ネットワークタブで `yaneuraou.k-p.wasm` の `Content-Type` が `application/wasm` であることで確かめる。
 
+### 5-2. 通信なしで動くか確かめる
+
+画面上部に「オフライン保存は未完了です」が出ていなければ、保存は完了している。そのうえで**本当に通信を切って**開き直す（スマートフォンなら機内モード）。
+
+> **開発者ツールや Playwright の「オフライン」模擬で確かめないこと。**
+> 本番（リモートの HTTPS）では、保存が完了していて Service Worker が素材を全部返せる状態でも、
+> 模擬のまま `reload()` すると `net::ERR_INTERNET_DISCONNECTED` で失敗した（Chromium・WebKit とも）。
+> 手元（localhost）では同じ手順が通るので、模擬の限界である。
+> 存在しない中継サーバー（`proxy: http://127.0.0.1:9`）を通して通信を本当に失敗させると、
+> 両方のブラウザで起動・「判定: エンジン」・一手指してオジジが応じる、まで通った。
+
+#### 配信元の `Vary` について
+
+エックスサーバーの nginx は、圧縮して送る応答（HTML・CSS・JS）に `Vary: Accept-Encoding` を付ける。Service Worker の保存からの取り出しがこれを照合すると、保存済みでも一致しないことがある。`public/coi-serviceworker.js` は取り出しに `ignoreVary: true` を付けている（中身は保存時に SHA-256 で検証済み）。修正前の版では、通信なしでページ本体を取得できていなかった。
+
 ### 6. iPhone 実機で確かめる
 
 Safari で開き、共有 →「ホーム画面に追加」。
