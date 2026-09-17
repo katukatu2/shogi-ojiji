@@ -80,10 +80,10 @@ if (typeof window === 'undefined') {
           const url = new URL(path, scope);
           const hash = manifest.sha256?.[path];
           if (!url.href.startsWith(scope) || !/^[a-f0-9]{64}$/.test(hash || '')) throw new Error('invalid asset: ' + path);
-          if (await matches(await cache.match(url.href), hash)) return; // 初回の途中までの保存を再利用
+          if (await matches(await cache.match(url.href, { ignoreVary: true }), hash)) return; // 初回の途中までの保存を再利用
           for (const old of reusable) {
             if (old.info.sha256?.[path] === hash) {
-              const prior = await old.cache.match(url.href);
+              const prior = await old.cache.match(url.href, { ignoreVary: true });
               if (await matches(prior, hash)) { await cache.put(url.href, prior); return; }
             }
           }
@@ -177,14 +177,16 @@ if (typeof window === 'undefined') {
         cache = await caches.open(CACHE);
         complete = !!await readyManifest();
         // 不完全な保存を完成版として返さない。クエリ付き音声も同じ版の素材へ揃える。
-        if (complete) hit = await cache.match(req, { ignoreSearch: complete });
+        // 配信元（エックスサーバーの nginx など）は圧縮する応答に Vary: Accept-Encoding を付ける。照合が Vary を見ると、
+        // 保存済みでも一致せず通信を取りに行き、通信なしでは起動できなかった。中身は保存時に SHA-256 で検証済みなので無視してよい。
+        if (complete) hit = await cache.match(req, { ignoreSearch: complete, ignoreVary: true });
       } catch { /* 保存不可でもオンラインのヘッダー付与は続ける */ }
       if (complete && hit) return cachedResponse(hit, req);
       try {
         const res = await fetch(req);
         return withIsolation(res);
       } catch (error) {
-        const fallback = hit || (complete && req.mode === 'navigate' ? await cache.match(scope) : null);
+        const fallback = hit || (complete && req.mode === 'navigate' ? await cache.match(scope, { ignoreVary: true }) : null);
         if (fallback) return cachedResponse(fallback, req);
         throw error;
       }

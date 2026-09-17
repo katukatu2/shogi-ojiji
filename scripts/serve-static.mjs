@@ -59,7 +59,9 @@ export function createStaticServer({ root = resolve('dist'), isolated = false, f
       if (path.endsWith('/')) path += 'index.html';
       const file = resolve(root, '.' + path);
       if (!file.startsWith(root + sep) || !statSync(file).isFile()) throw new Error('not found');
-      const headers = { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' };
+      // 本番（エックスサーバーの nginx）は圧縮する応答に Vary: Accept-Encoding を付ける。これが付くと Cache API の
+      // 照合が Vary を見るため、保存済みの素材が通信なしで引けなくなった。試験も同じ条件で走らせる。
+      const headers = { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store', 'Vary': 'Accept-Encoding' };
       if (isolated) Object.assign(headers, { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' });
       res.writeHead(200, headers);
       if (fault === 'version') res.end(JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), version: 'mismatched-release' }));
