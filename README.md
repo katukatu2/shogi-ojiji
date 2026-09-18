@@ -4,7 +4,7 @@
 ただし、その戦法相手にやってはいけない手を指すと、オジジがカットインして「ばかもーん！」と叱り、正しい手を教えてくれる。
 企画は [docs/plan.md](docs/plan.md)。
 
-**Web 版 1.0.1 を https://shogi.godo-amity.com/ で公開中**（エックスサーバー、配信手順は [deploy-xserver.md](docs/deploy-xserver.md)）。公開した版は git のタグ（`v1.0.1` など）で示す。iPhone の実機（Safari とホーム画面に追加したアプリ）で、エンジンによる判定・通信なしでの対局・アプリ切り替えからの復帰を確認済み。App Store・Google Play への提出は未着手（下の「ライセンス」を参照）。これまでの査読の経緯は [リリース査読記録](docs/release-audit.md)。
+**Web 版 1.0.2 を https://shogi.godo-amity.com/ で公開中**（エックスサーバー、配信手順は [deploy-xserver.md](docs/deploy-xserver.md)）。公開した版は git のタグ（`v1.0.1` など）で示す。iPhone の実機（Safari とホーム画面に追加したアプリ）で、エンジンによる判定・通信なしでの対局・アプリ切り替えからの復帰を確認済み。App Store・Google Play への提出は未着手（下の「ライセンス」を参照）。これまでの査読の経緯は [リリース査読記録](docs/release-audit.md)。
 
 ## 開発
 
